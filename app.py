@@ -23,7 +23,7 @@ with st.sidebar:
         menu_title="",
         options=SECCIONES,
         icons=["house", "camera", "calculator", "egg-fried", "cpu"],
-        default_index=0,
+        default_index=SECCIONES.index(st.session_state.nav),
     )
     st.session_state.nav = selected
 
@@ -79,11 +79,12 @@ def render_placeholder(title: str, note: str = ""):
     if note:
         st.caption(note)
 
+from pages.scan_page import render_scan
 # --- Router ---
 if st.session_state.nav == "Página principal":
     render_home()
 elif st.session_state.nav == "Escanear platillo":
-    render_placeholder("Escanear platillo", "Aquí podrás subir una foto o usar la cámara para reconocer el platillo.")
+    render_scan()
 elif st.session_state.nav == "Calculadora nutricional":
     render_placeholder("Calculadora nutricional", "Cálculo de IMC, TMB y calorías diarias recomendadas.")
 elif st.session_state.nav == "Crear receta":
