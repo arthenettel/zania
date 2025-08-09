@@ -1,9 +1,11 @@
 """
-Página: Escanear platillo (modular)
+Página: Escanear platillo (modular, ahorro de peticiones)
 
 • No dibuja el sidebar. Asume que app.py lo crea con streamlit-option-menu.
 • Usa GOOGLE_API_KEY desde .env (python-dotenv) o st.secrets como respaldo.
 • Layout: 2 columnas (izq: captura; der: resultado). Abajo: "Analiza tu platillo".
+• Solo llama a Gemini cuando el usuario presiona **Analizar ahora** y cachea el resultado
+  por imagen para no repetir llamadas si la imagen es la misma.
 
 Integración en app.py:
 
@@ -23,6 +25,7 @@ import os
 import io
 import json
 import re
+import hashlib
 from typing import Tuple, List
 
 import streamlit as st
@@ -114,6 +117,8 @@ def render_scan():
         st.session_state.scan_result = {"name": None, "ingredients": []}
     if "analysis_panel" not in st.session_state:
         st.session_state.analysis_panel = None
+    if "_scan_cache" not in st.session_state:
+        st.session_state._scan_cache = {"digest": None, "result": None}
 
     st.markdown("# Escanear platillo")
 
@@ -151,13 +156,34 @@ def render_scan():
             img = Image.open(io.BytesIO(image_bytes))
             st.image(img, caption="Vista previa", use_column_width=True)
 
-            with st.spinner("Analizando imagen con Gemini…"):
-                try:
-                    name, ingredients = gemini_analyze_image(image_bytes, mime or "image/jpeg")
-                except Exception as e:
-                    st.error(f"No fue posible analizar la imagen. {e}")
-                    name, ingredients = None, []
-            st.session_state.scan_result = {"name": name, "ingredients": ingredients}
+            # Digest para cachear por imagen (evita gastar cuota si es la misma)
+            digest = hashlib.sha256(image_bytes).hexdigest()
+
+            # Controles de análisis
+            colA, colB = st.columns([1, 1])
+            with colA:
+                do_analyze = st.button("🔍 Analizar ahora", use_container_width=True)
+            with colB:
+                force = st.checkbox("Forzar re-analizar", value=False)
+
+            if do_analyze:
+                use_cache = (
+                    st.session_state._scan_cache["digest"] == digest and
+                    st.session_state._scan_cache["result"] is not None and
+                    not force
+                )
+                if use_cache:
+                    name, ingredients = st.session_state._scan_cache["result"]
+                else:
+                    with st.spinner("Analizando imagen con Gemini…"):
+                        try:
+                            name, ingredients = gemini_analyze_image(image_bytes, mime or "image/jpeg")
+                            # Guarda en caché
+                            st.session_state._scan_cache = {"digest": digest, "result": (name, ingredients)}
+                        except Exception as e:
+                            st.error(f"No fue posible analizar la imagen. {e}")
+                            name, ingredients = None, []
+                st.session_state.scan_result = {"name": name, "ingredients": ingredients}
         else:
             st.session_state.scan_result = {"name": None, "ingredients": []}
 
@@ -174,24 +200,26 @@ def render_scan():
             else:
                 st.caption("No se detectaron ingredientes con suficiente confianza.")
         else:
-            st.info("Cuando subas o tomes una foto, aquí aparecerán el nombre del platillo y sus ingredientes.")
+            st.info("Sube/toma una foto y presiona **Analizar ahora** para obtener el resultado sin gastar llamadas innecesarias.")
 
     st.divider()
 
     # Sección inferior: Analiza tu platillo
     st.markdown("## Analiza tu platillo")
+
+    disabled = st.session_state.scan_result.get("name") is None
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("🍳 Cómo cocinarlo", use_container_width=True):
+        if st.button("🍳 Cómo cocinarlo", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Cómo cocinarlo"
     with col2:
-        if st.button("📊 Información nutricional", use_container_width=True):
+        if st.button("📊 Información nutricional", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Información nutricional"
     with col3:
-        if st.button("🔁 Alternativas similares", use_container_width=True):
+        if st.button("🔁 Alternativas similares", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Alternativas similares"
     with col4:
-        if st.button("📝 Generar reporte", use_container_width=True):
+        if st.button("📝 Generar reporte", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Generar reporte"
 
     if st.session_state.analysis_panel:
@@ -201,3 +229,4 @@ def render_scan():
             if st.button("Cerrar", key="close_panel"):
                 st.session_state.analysis_panel = None
                 st.rerun()
+
