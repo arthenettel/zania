@@ -23,7 +23,7 @@ Requisitos:
     google-generativeai>=0.8.0
     python-dotenv>=1.0.1
 """
-from _future_ import annotations
+from __future__ import annotations
 import os
 import io
 import json
