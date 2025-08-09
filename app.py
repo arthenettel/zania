@@ -1,9 +1,10 @@
 import streamlit as st
+from streamlit_option_menu import option_menu
 
 # --- Configuración general ---
 st.set_page_config(page_title="Zania", page_icon="🥗", layout="wide")
 
-# --- Estado de navegación (sin menú lateral) ---
+# --- Estado de navegación ---
 if "nav" not in st.session_state:
     st.session_state.nav = "Página principal"
 
@@ -15,6 +16,17 @@ SECCIONES = [
     "Platómetro",
 ]
 
+# --- Menú lateral con streamlit-option-menu ---
+with st.sidebar:
+    st.markdown("## 🥗 Zania")
+    selected = option_menu(
+        menu_title="",
+        options=SECCIONES,
+        icons=["house", "camera", "calculator", "egg-fried", "cpu"],
+        default_index=0,
+    )
+    st.session_state.nav = selected
+
 # --- Helper navegación ---
 def go_to(section: str):
     if section in SECCIONES:
@@ -22,9 +34,7 @@ def go_to(section: str):
         st.rerun()
 
 # --- Página principal ---
-
 def render_home():
-    # Tres columnas: izquierda | separador | derecha
     left, gap, right = st.columns([1, 0.11, 1])
 
     with left:
@@ -43,7 +53,6 @@ def render_home():
     with right:
         st.markdown("## Elige una opción")
 
-        # Botones en columna con menor espacio vertical
         if st.button("📷 Escanear platillo", use_container_width=True):
             go_to("Escanear platillo")
         if st.button("🧮 Calculadora nutricional", use_container_width=True):
@@ -51,7 +60,7 @@ def render_home():
         if st.button("🍳 Crear receta", use_container_width=True):
             go_to("Crear receta")
 
-        st.divider()  # Línea divisoria delgada
+        st.divider()
 
         if st.button("📟 Platómetro", use_container_width=True):
             go_to("Platómetro")
@@ -70,7 +79,6 @@ def render_placeholder(title: str, note: str = ""):
     if note:
         st.caption(note)
 
-
 # --- Router ---
 if st.session_state.nav == "Página principal":
     render_home()
@@ -87,16 +95,14 @@ elif st.session_state.nav == "Platómetro":
 st.markdown(
     """
     <style>
-    /* Ocultar por completo el sidebar */
-    section[data-testid="stSidebar"] {display:none;}
-    /* Reducir espacio vertical entre botones */
     div.stButton {margin-bottom: 0.5rem;}
-    /* Botones suaves */
     .stButton > button {border-radius: 12px; padding: 0.9rem 1rem; font-weight: 600;}
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
 
 
 
