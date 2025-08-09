@@ -80,15 +80,17 @@ def render_placeholder(title: str, note: str = ""):
         st.caption(note)
 
 from pages.scan_page import render_scan
+from pages.calc_page import render_calc
+from pages.create_page import render_create
 # --- Router ---
 if st.session_state.nav == "Página principal":
     render_home()
 elif st.session_state.nav == "Escanear platillo":
     render_scan()
 elif st.session_state.nav == "Calculadora nutricional":
-    render_placeholder("Calculadora nutricional", "Cálculo de IMC, TMB y calorías diarias recomendadas.")
+    render_calc()
 elif st.session_state.nav == "Crear receta":
-    render_placeholder("Crear receta", "Genera recetas personalizadas a partir de ingredientes y preferencias.")
+    render_create()
 elif st.session_state.nav == "Platómetro":
     render_placeholder("Platómetro", "Recuerda: requiere conexión previa al dispositivo externo para funcionar.")
 
