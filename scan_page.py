@@ -1,12 +1,4 @@
 """
-Página: Escanear platillo (modular, ahorro de peticiones + Análisis con Gemini)
-
-• No dibuja el sidebar. Asume que app.py lo crea con streamlit-option-menu.
-• Usa GOOGLE_API_KEY desde .env (python-dotenv) o st.secrets como respaldo.
-• Layout: 2 columnas (izq: captura; der: resultado). Abajo: "Analiza tu platillo".
-• SOLO llama a Gemini cuando el usuario presiona *Analizar ahora* y cachea el resultado
-  por imagen para no repetir llamadas si la imagen es la misma. Las opciones de análisis
-  también se ejecutan bajo demanda y se cachean por imagen+opción.
 • Las evaluaciones nutricionales y culinarias se hacen *para una porción* y
   se basan SOLO en: *Norma Oficial Mexicana NOM-043* y *Guías Alimentarias para la Población Mexicana*.
 
@@ -22,6 +14,7 @@ Requisitos:
     pillow>=10.0.0
     google-generativeai>=0.8.0
     python-dotenv>=1.0.1
+    reportlab>=4.0.0   # solo para el PDF
 """
 from __future__ import annotations
 import os
@@ -60,10 +53,10 @@ SYSTEM_PROMPT = (
 # =====================
 
 def _strip_code_fences(text: str) -> str:
-    """Quita json ...  si el modelo lo agrega."""
+    """Quita ```json ... ``` si el modelo lo agrega."""
     t = (text or "").strip()
-    if t.startswith(""):
-        t = re.sub(r"^[a-zA-Z0-9]*\n", "", t)
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z0-9]*\n", "", t)
         t = re.sub(r"\n```$", "", t)
     return t.strip()
 
@@ -151,6 +144,130 @@ def analyze_alternatives(name: str, ingredients: List[str], kcal_objetivo: float
 
 
 # =====================
+# Helper PDF (lazy import)
+# =====================
+
+def _build_report_pdf(nombre, cook, nut, alts):
+    import io, textwrap
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import cm
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
+    except Exception as e:
+        raise RuntimeError("Falta instalar reportlab. Ejecuta: pip install reportlab") from e
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    W, H = letter
+    x = 2*cm
+    y = H - 2*cm
+
+    def page_guard(min_y=2*cm):
+        nonlocal y
+        if y < min_y:
+            c.showPage()
+            y = H - 2*cm
+
+    def heading(txt, size=14):
+        nonlocal y
+        page_guard()
+        c.setFont("Helvetica-Bold", size)
+        c.drawString(x, y, txt)
+        y -= (size + 8)
+
+    def para(txt, size=10, wrap=100, double_spaced=False):
+        nonlocal y
+        c.setFont("Helvetica", size)
+        lines = textwrap.wrap(txt or "", wrap) or [""]
+        for line in lines:
+            page_guard()
+            c.drawString(x, y, line)
+            y -= 14
+            if double_spaced:
+                y -= 6  # espacio extra entre viñetas/pasos
+        y -= 6
+
+    # Portada
+    heading("Reporte de platillo", 18)
+    para(f"Nombre: {nombre or '—'}")
+
+    # ---- Cómo cocinarlo ----
+    if cook:
+        heading("Cómo cocinarlo", 14)
+        para(f"Tiempo: {cook.get('tiempo_min','—')} min  |  Nivel: {cook.get('nivel','—')}")
+
+        # Ingredientes en TABLA
+        heading("Ingredientes", 12)
+        ings = cook.get("ingredientes") or []
+        data = [["Ingrediente", "Cantidad"]] + [[i.get("nombre",""), i.get("cantidad"," ")] for i in ings]
+        table = Table(data, colWidths=[8*cm, 6*cm])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#eeeeee")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.black),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 10),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+            ("ALIGN", (0,0), (-1,-1), "LEFT"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fafafa")]),
+        ]))
+        # Calcular altura y dibujar
+        w, h = table.wrapOn(c, W - 4*cm, y)
+        if y - h < 2*cm:
+            c.showPage(); y = H - 2*cm
+        table.drawOn(c, x, y - h)
+        y = y - h - 10
+
+        # Procedimiento con espacio entre pasos
+        heading("Procedimiento", 12)
+        pasos = cook.get("procedimiento") or []
+        for i, p in enumerate(pasos, start=1):
+            para(f"{i}. {p}", double_spaced=True)
+
+    # ---- Información nutricional ----
+    if nut:
+        heading("Información nutricional (por porción)", 14)
+        macro = (
+            f"KCal: {nut.get('kcal','—')}  |  "
+            f"Proteínas: {nut.get('proteinas_g','—')} g  |  "
+            f"Carbohidratos: {nut.get('carbohidratos_g','—')} g  |  "
+            f"Grasas: {nut.get('grasas_g','—')} g"
+        )
+        para(macro)
+        heading("Tabla por ingrediente", 12)
+        filas = nut.get("tabla_ingredientes") or []
+        # Imprime cada fila como viñeta doble-espaciada para mejorar legibilidad
+        for r in filas:
+            txt = (f"• {r.get('ingrediente','')}: {r.get('kcal','—')} kcal, "
+                   f"P {r.get('proteinas_g','—')} g, C {r.get('carbohidratos_g','—')} g, G {r.get('grasas_g','—')} g")
+            para(txt, double_spaced=True)
+        heading("Recomendaciones", 12)
+        para(nut.get("recomendaciones",""))
+
+    # ---- Alternativas similares ----
+    if alts:
+        heading("Alternativas con calorías similares (±10%)", 14)
+        veg = alts.get("vegetarianos") or []
+        non = alts.get("no_vegetarianos") or []
+        if veg:
+            heading("Vegetarianos", 12)
+            for a in veg:
+                para(f"• {a.get('nombre','')} (≈ {a.get('kcal','—')} kcal): {a.get('descripcion','')}", double_spaced=True)
+        if non:
+            heading("No vegetarianos", 12)
+            for a in non:
+                para(f"• {a.get('nombre','')} (≈ {a.get('kcal','—')} kcal): {a.get('descripcion','')}", double_spaced=True)
+
+    c.showPage()
+    c.save()
+    pdf = buf.getvalue()
+    buf.close()
+    return pdf
+
+
+# =====================
 # UI / Render
 # =====================
 
@@ -201,7 +318,7 @@ def render_scan():
 
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
-            st.image(img, caption="Vista previa", use_column_width=True)
+            st.image(img, caption="Vista previa", use_container_width=True)
 
             # Digest para cachear por imagen (evita gastar cuota si es la misma)
             digest = hashlib.sha256(image_bytes).hexdigest()
@@ -358,7 +475,61 @@ def render_scan():
                                 st.caption(f"≈ {item['kcal']} kcal")
                             st.write(item.get('descripcion', ''))
 
+                elif panel == "Generar reporte":
+                    st.caption("Genera un PDF con el **nombre del platillo** y la información de: **Cómo cocinarlo**, **Información nutricional** y **Alternativas similares** para poder descargarlo y revisarlo cuando quieras.")
+                    # Obtener/calc datos de cada sección SIN alterar las otras
+                    digest = st.session_state._last_digest
+                    name = st.session_state.scan_result.get("name")
+                    ings = st.session_state.scan_result.get("ingredients", [])
+
+                    cook_key = f"{digest}:Cómo cocinarlo"
+                    nut_key  = f"{digest}:Información nutricional"
+                    alt_key  = f"{digest}:Alternativas similares"
+
+                    cook = st.session_state._analysis_cache.get(cook_key)
+                    if cook is None and name:
+                        try:
+                            cook = analyze_cooking(name, ings)
+                            st.session_state._analysis_cache[cook_key] = cook
+                        except Exception as e:
+                            st.warning(f"No se pudo obtener 'Cómo cocinarlo': {e}")
+                            cook = None
+
+                    nut = st.session_state._analysis_cache.get(nut_key)
+                    if nut is None and name:
+                        try:
+                            nut = analyze_nutrition(name, ings)
+                            st.session_state._analysis_cache[nut_key] = nut
+                        except Exception as e:
+                            st.warning(f"No se pudo obtener 'Información nutricional': {e}")
+                            nut = None
+
+                    alts = st.session_state._analysis_cache.get(alt_key)
+                    if alts is None and name:
+                        kcal_obj = (nut or {}).get("kcal") if isinstance(nut, dict) else None
+                        try:
+                            alts = analyze_alternatives(name, ings, kcal_obj)
+                            st.session_state._analysis_cache[alt_key] = alts
+                        except Exception as e:
+                            st.warning(f"No se pudo obtener 'Alternativas similares': {e}")
+                            alts = None
+
+                    if st.button("📄 Generar", use_container_width=True):
+                        try:
+                            pdf_bytes = _build_report_pdf(name, cook, nut, alts)
+                            st.download_button(
+                                "⬇️ Descargar reporte (PDF)",
+                                data=pdf_bytes,
+                                file_name=f"reporte_{(name or 'platillo').lower().replace(' ','_')}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                        except Exception as e:
+                            st.error(str(e))
+
             if st.button("Cerrar", key="close_panel"):
                 st.session_state.analysis_panel = None
                 st.rerun()
+
+
 

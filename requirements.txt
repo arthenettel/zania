@@ -3,3 +3,4 @@ streamlit-option-menu
 pillow
 google-generativeai
 python-dotenv
+reportlab
