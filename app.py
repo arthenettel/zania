@@ -105,6 +105,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Texto de nota al final de la página
+st.markdown(
+    """
+    <div style="text-align:center; font-size:12px; color:gray; margin-top:30px;">
+        Esta información es solo orientativa. Acuda siempre a un especialista antes de tomar decisiones sobre su salud.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 
 
