@@ -79,9 +79,9 @@ def render_placeholder(title: str, note: str = ""):
     if note:
         st.caption(note)
 
-from pages.scan_page import render_scan
-from pages.calc_page import render_calc
-from pages.create_page import render_create
+from scan_page import render_scan
+from calc_page import render_calc
+from create_page import render_create
 # --- Router ---
 if st.session_state.nav == "Página principal":
     render_home()
