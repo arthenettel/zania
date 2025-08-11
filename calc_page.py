@@ -17,11 +17,11 @@ Requisitos: streamlit>=1.33
 import streamlit as st
 
 ACTIVITY_OPTIONS = [
-    {"key": "Sedentario", "label": "Sedentario\nPoco o nada de ejercicio", "factor": 1.2},
-    {"key": "Ligeramente Activo", "label": "Ligeramente Activo\nEjercicio 2 a 3 días por semana", "factor": 1.375},
-    {"key": "Moderadamente Activo", "label": "Moderadamente Activo\nEjercicio 4 a 5 días por semana", "factor": 1.55},
-    {"key": "Muy Activo", "label": "Muy Activo\nEjercicio 6 a 7 días por semana", "factor": 1.725},
-    {"key": "Atleta Profesional", "label": "Atleta Profesional\nEjercicio intenso 6 a 7 días por semana", "factor": 1.9},
+    {"key": "Sedentario", "label": "Sedentario: Poco o nada de ejercicio", "factor": 1.2},
+    {"key": "Ligeramente Activo", "label": "Ligeramente Activo: Ejercicio 2 a 3 días por semana", "factor": 1.375},
+    {"key": "Moderadamente Activo", "label": "Moderadamente Activo: Ejercicio 4 a 5 días por semana", "factor": 1.55},
+    {"key": "Muy Activo", "label": "Muy Activo: Ejercicio 6 a 7 días por semana", "factor": 1.725},
+    {"key": "Atleta Profesional", "label": "Atleta Profesional: Ejercicio intenso 6 a 7 días por semana", "factor": 1.9},
 ]
 
 
