@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_option_menu import option_menu
 
 # --- Configuración general ---
-st.set_page_config(page_title="Zania", page_icon="🥗", layout="wide")
+st.set_page_config(page_title="ZanIA", page_icon="🥗", layout="wide")
 
 # --- Estado de navegación ---
 if "nav" not in st.session_state:
@@ -18,7 +18,7 @@ SECCIONES = [
 
 # --- Menú lateral con streamlit-option-menu ---
 with st.sidebar:
-    st.markdown("## 🥗 Zania")
+    st.markdown("## 🥗 ZanIA")
     selected = option_menu(
         menu_title="",
         options=SECCIONES,
@@ -40,7 +40,7 @@ def render_home():
     with left:
         st.markdown(
             """
-            <h1 style="margin-bottom:0.25rem; font-size:5rem;">Zania</h1>
+            <h1 style="margin-bottom:0.25rem; font-size:5rem;">ZanIA</h1>
             <p style="font-size:1.05rem; line-height:1.6; margin-top:0.25rem;">
             <strong>Tu apoyo inteligente de alimentación.</strong><br>
             Usando inteligencia artificial, te ayuda a reconocer platillos con solo una foto.
@@ -82,6 +82,7 @@ def render_placeholder(title: str, note: str = ""):
 from scan_page import render_scan
 from calc_page import render_calc
 from create_page import render_create
+from platometro_page import render_platometro
 # --- Router ---
 if st.session_state.nav == "Página principal":
     render_home()
@@ -92,7 +93,7 @@ elif st.session_state.nav == "Calculadora nutricional":
 elif st.session_state.nav == "Crear receta":
     render_create()
 elif st.session_state.nav == "Platómetro":
-    render_placeholder("Platómetro", "Recuerda: requiere conexión previa al dispositivo externo para funcionar.")
+    render_platometro()
 
 # --- Estilos globales ---
 st.markdown(

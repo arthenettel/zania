@@ -76,7 +76,7 @@ def render_calc():
     with right:
         res = st.session_state.calc_result
         if res is None:
-            st.info("Aquí verás tu **IMC** y las **calorías recomendadas por día** después de calcular.")
+            st.info("Aquí verás tu **IMC** (es una medida que relaciona el peso y la estatura de una persona para evaluar su estado nutricional y determinar si se encuentra en un rango de peso saludable) y las **calorías recomendadas por día** después de calcular.")
         else:
             st.subheader("Resultados")
             # Sección IMC

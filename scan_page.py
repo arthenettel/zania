@@ -2,19 +2,7 @@
 • Las evaluaciones nutricionales y culinarias se hacen *para una porción* y
   se basan SOLO en: *Norma Oficial Mexicana NOM-043* y *Guías Alimentarias para la Población Mexicana*.
 
-Integración en app.py:
-
-    from pages.scan_page import render_scan
-    # ...
-    elif st.session_state.nav == "Escanear platillo":
-        render_scan()
-
-Requisitos:
-    streamlit>=1.33
-    pillow>=10.0.0
-    google-generativeai>=0.8.0
-    python-dotenv>=1.0.1
-    reportlab>=4.0.0   # solo para el PDF
+}
 """
 from __future__ import annotations
 import os
@@ -245,6 +233,7 @@ def _build_report_pdf(nombre, cook, nut, alts):
             para(txt, double_spaced=True)
         heading("Recomendaciones", 12)
         para(nut.get("recomendaciones",""))
+        
 
     # ---- Alternativas similares ----
     if alts:
@@ -459,6 +448,10 @@ def render_scan():
                     with c2:
                         st.subheader("Recomendaciones")
                         st.write(data.get("recomendaciones", "Sin recomendaciones."))
+                        st.markdown(
+                        "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporal y tus calorías recomendadas por día.</p>",
+                        unsafe_allow_html=True
+                    )
 
                 elif panel == "Alternativas similares":
                     st.caption("Platillos con *cantidad calórica similar* (±10%) a la porción analizada.")
@@ -476,7 +469,7 @@ def render_scan():
                             st.write(item.get('descripcion', ''))
 
                 elif panel == "Generar reporte":
-                    st.caption("Genera un PDF con el **nombre del platillo** y la información de: **Cómo cocinarlo**, **Información nutricional** y **Alternativas similares** para poder descargarlo y revisarlo cuando quieras.")
+                    st.caption("Genera un PDF con el **nombre del platillo** y los resultados de: **Cómo cocinarlo**, **Información nutricional** y **Alternativas similares**.")
                     # Obtener/calc datos de cada sección SIN alterar las otras
                     digest = st.session_state._last_digest
                     name = st.session_state.scan_result.get("name")
@@ -530,6 +523,7 @@ def render_scan():
             if st.button("Cerrar", key="close_panel"):
                 st.session_state.analysis_panel = None
                 st.rerun()
+
 
 
 

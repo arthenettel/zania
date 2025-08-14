@@ -1,4 +1,3 @@
-from __future__ import annotations
 """
 Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
 
@@ -6,8 +5,22 @@ Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
   alimenticios (1: Frutas y verduras; 2: Granos y cereales; 3: Leguminosas; 4: Origen animal;
   5: Aceites y grasas saludables). Luego se compara contra las recomendaciones del
   Plato del Bien Comer (México).
-"""
+• Se cachea por imagen (hash) para no recalcular si es la misma.
 
+Integración en app.py:
+
+    from pages.platometro_page import render_platometro
+    # ...
+    elif st.session_state.nav == "Platómetro":
+        render_platometro()
+
+Requisitos:
+    streamlit>=1.33
+    pillow>=10.0.0
+    google-generativeai>=0.8.0
+    python-dotenv>=1.0.1
+"""
+from __future__ import annotations
 import os
 import io
 import json
@@ -17,30 +30,6 @@ from typing import Dict, Any, Tuple
 
 import streamlit as st
 from PIL import Image
-
-# =====================
-# MQTT (Streamlit -> ESP32)
-# =====================
-# pip install paho-mqtt
-import paho.mqtt.client as mqtt
-import time
-
-MQTT_HOST = os.getenv("MQTT_HOST", "192.168.1.10")  # cambia por la IP de tu broker
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_TOPIC = "nutriapp/platometro/update"
-
-def _ensure_mqtt():
-    if "mqtt_client" not in st.session_state:
-        c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        # Si necesitas auth:
-        # c.username_pw_set(os.getenv("MQTT_USER"), os.getenv("MQTT_PASS"))
-        try:
-            c.connect(MQTT_HOST, MQTT_PORT, 60)
-            c.loop_start()
-            st.session_state.mqtt_client = c
-        except Exception as e:
-            st.warning(f"No se pudo conectar al broker MQTT: {e}")
-            st.session_state.mqtt_client = None
 
 # --- .env ---
 try:
@@ -234,7 +223,7 @@ def render_platometro():
 
     st.markdown("# Platómetro")
     st.caption(
-        "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
+        "Analiza la proporción de **grupos alimenticios** de tu platillo y compara con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
     )
 
@@ -311,31 +300,6 @@ def render_platometro():
                     }
                     st.session_state.platometro_kcal = kcal_data.get("kcal")
                     st.session_state.platometro_kcal_notas = kcal_data.get("notas")
-
-                # ---- PUBLICAR A ESP32 (MQTT) ----
-                _ensure_mqtt()
-                try:
-                    data = st.session_state.platometro_data or {}
-                    porcentajes = (data.get("porcentajes") or {})
-                    payload = {
-                        "platillo": (data.get("platillo") or "Platillo"),
-                        "porcentajes": {
-                            "frutas_verduras": float(_num(porcentajes.get("frutas_verduras", 0))),
-                            "granos_cereales": float(_num(porcentajes.get("granos_cereales", 0))),
-                            "leguminosas": float(_num(porcentajes.get("leguminosas", 0))),
-                            "origen_animal": float(_num(porcentajes.get("origen_animal", 0))),
-                            "aceites_grasas_saludables": float(_num(porcentajes.get("aceites_grasas_saludables", 0))),
-                        },
-                        "kcal": (float(_num(st.session_state.platometro_kcal, 0.0)) if st.session_state.platometro_kcal is not None else None),
-                    }
-                    if st.session_state.mqtt_client:
-                        st.session_state.mqtt_client.publish(MQTT_TOPIC, json.dumps(payload))
-                        st.success("Enviado a ESP32 (MQTT).")
-                    else:
-                        st.warning("Cliente MQTT no disponible; revisa la conexión al broker.")
-                except Exception as e:
-                    st.error(f"Error publicando MQTT: {e}")
-
         else:
             st.session_state.platometro_data = None
             st.session_state.platometro_kcal = None
@@ -362,7 +326,7 @@ def render_platometro():
             c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
             c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
 
-            # -------- Calorías por porción --------
+            # -------- NUEVO: Calorías por porción --------
             kcal_val = st.session_state.platometro_kcal
             kcal_notes = st.session_state.platometro_kcal_notas
             if kcal_val is not None:
@@ -373,16 +337,13 @@ def render_platometro():
             else:
                 st.warning("No se pudieron estimar las calorías para esta imagen.")
 
-            # Recomendaciones
+            # Recomendaciones (se mantienen)
             st.subheader("Recomendaciones")
             st.write(_recommendations(p))
 
     st.divider()
     st.info("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día**.")
 
-
-if __name__ == "__main__":
-    render_platometro()
 
 
 
