@@ -1,24 +1,6 @@
 """
 Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
 
-• Flujo: subir/tomar foto → botón "Calcular" → IA (Gemini) estima proporción por grupos
-  alimenticios (1: Frutas y verduras; 2: Granos y cereales; 3: Leguminosas; 4: Origen animal;
-  5: Aceites y grasas saludables). Luego se compara contra las recomendaciones del
-  Plato del Bien Comer (México).
-• Se cachea por imagen (hash) para no recalcular si es la misma.
-
-Integración en app.py:
-
-    from pages.platometro_page import render_platometro
-    # ...
-    elif st.session_state.nav == "Platómetro":
-        render_platometro()
-
-Requisitos:
-    streamlit>=1.33
-    pillow>=10.0.0
-    google-generativeai>=0.8.0
-    python-dotenv>=1.0.1
 """
 from __future__ import annotations
 import os

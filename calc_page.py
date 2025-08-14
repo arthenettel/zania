@@ -1,18 +1,6 @@
 """
 Página: Calculadora nutricional
 
-• No dibuja el sidebar. Asume que app.py lo crea con streamlit-option-menu.
-• Layout: 2 columnas (izq: formulario; der: resultados).
-• Fórmula de gasto basal: Mifflin–St Jeor. IMC con clasificación OMS.
-
-Integración en app.py:
-
-    from pages.calc_page import render_calc
-    # ...
-    elif st.session_state.nav == "Calculadora nutricional":
-        render_calc()
-
-Requisitos: streamlit>=1.33
 """
 import streamlit as st
 
