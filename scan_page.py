@@ -1,8 +1,6 @@
 """
 • Las evaluaciones nutricionales y culinarias se hacen *para una porción* y
   se basan SOLO en: *Norma Oficial Mexicana NOM-043* y *Guías Alimentarias para la Población Mexicana*.
-
-}
 """
 from __future__ import annotations
 import os
@@ -84,7 +82,8 @@ def gemini_identify(image_bytes: bytes, mime_type: str = "image/jpeg") -> Tuple[
     """Identifica nombre e ingredientes visibles (lista simple)."""
     prompt = (
         f"{SYSTEM_PROMPT}. Devuelve SOLO JSON con: "
-        "{\"name\": string, \"ingredients\": [string,...]}.")
+        "{\"name\": string, \"ingredients\": [string,...]}."
+    )
     data = _call_gemini_json([
         {"text": prompt},
         {"inline_data": {"mime_type": mime_type, "data": image_bytes}},
@@ -100,7 +99,7 @@ def analyze_cooking(name: str, ingredients: List[str]) -> Dict[str, Any]:
         f"{SYSTEM_PROMPT}. Para el platillo: '{name}'. Ingredientes detectados: {ingredients}. "
         "Devuelve SOLO JSON con: "
         "{\"ingredientes\":[{\"nombre\":string,\"cantidad\":string}],"
-        " \"tiempo_min\":number, \"nivel\":\"básico|intermedio|difícil\"," 
+        " \"tiempo_min\":number, \"nivel\":\"básico|intermedio|difícil\","
         " \"procedimiento\":[string,...]}. "
         "Notas: cantidades y unidades MÉTRICAS (g, ml, piezas). Cada elemento de 'procedimiento' debe ser un paso con explicación DETALLADA en un párrafo; NO agregues líneas divisorias."
     )
@@ -321,11 +320,22 @@ def render_scan():
             st.session_state._last_mime = mime
 
             img = Image.open(io.BytesIO(image_bytes))
-            st.image(img, caption="Vista previa", use_column_width=True)
+            st.image(img, caption="Vista previa", use_container_width=True)
 
             # Digest para cachear por imagen (evita gastar cuota si es la misma)
             digest = hashlib.sha256(image_bytes).hexdigest()
             st.session_state._last_digest = digest
+
+            # Si por algún motivo perdimos scan_result pero tenemos _scan_cache del mismo digest, restáuralo
+            if (
+                (not st.session_state.scan_result.get("name"))
+                and st.session_state._scan_cache.get("digest") == digest
+                and st.session_state._scan_cache.get("result") is not None
+            ):
+                st.session_state.scan_result = {
+                    "name": st.session_state._scan_cache["result"][0],
+                    "ingredients": st.session_state._scan_cache["result"][1],
+                }
 
             # Controles de análisis
             colA, colB = st.columns([1, 1])
@@ -366,7 +376,7 @@ def render_scan():
             st.markdown(f"### {res['name']}")
             if res["ingredients"]:
                 for ing in res["ingredients"]:
-                    st.markdown(f"- { ing }")
+                    st.markdown(f"- {ing}")
             else:
                 st.caption("No se detectaron ingredientes con suficiente confianza.")
         else:
@@ -401,7 +411,9 @@ def render_scan():
             cache_key = f"{st.session_state._last_digest}:{panel}"
             data = st.session_state._analysis_cache.get(cache_key)
 
-            if data is None and st.session_state._last_digest is not None:
+            # >>> Cambiado: ya no exigimos _last_digest; basta con tener nombre <<<
+            has_name = bool(st.session_state.scan_result.get("name"))
+            if data is None and has_name:
                 name = st.session_state.scan_result.get("name")
                 ings = st.session_state.scan_result.get("ingredients", [])
                 try:
@@ -465,9 +477,9 @@ def render_scan():
                         st.subheader("Recomendaciones")
                         st.write(data.get("recomendaciones", "Sin recomendaciones."))
                         st.markdown(
-                        "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporporal y tus calorías recomendadas por día.</p>",
-                        unsafe_allow_html=True
-                    )
+                            "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporal y tus calorías recomendadas por día.</p>",
+                            unsafe_allow_html=True
+                        )
 
                 elif panel == "Alternativas similares":
                     st.caption("Platillos con *cantidad calórica similar* (±10%) a la porción analizada.")
