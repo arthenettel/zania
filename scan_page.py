@@ -100,7 +100,7 @@ def analyze_cooking(name: str, ingredients: List[str]) -> Dict[str, Any]:
         f"{SYSTEM_PROMPT}. Para el platillo: '{name}'. Ingredientes detectados: {ingredients}. "
         "Devuelve SOLO JSON con: "
         "{\"ingredientes\":[{\"nombre\":string,\"cantidad\":string}],"
-        " \"tiempo_min\":number, \"nivel\":\"básico|intermedio|difícil\","
+        " \"tiempo_min\":number, \"nivel\":\"básico|intermedio|difícil\"," 
         " \"procedimiento\":[string,...]}. "
         "Notas: cantidades y unidades MÉTRICAS (g, ml, piezas). Cada elemento de 'procedimiento' debe ser un paso con explicación DETALLADA en un párrafo; NO agregues líneas divisorias."
     )
@@ -272,6 +272,11 @@ def render_scan():
         st.session_state._analysis_cache = {}  # key: f"{digest}:{panel}" -> data
     if "_last_digest" not in st.session_state:
         st.session_state._last_digest = None
+    # Persistencia de imagen para cámara/uploader
+    if "_last_image_bytes" not in st.session_state:
+        st.session_state._last_image_bytes = None
+    if "_last_mime" not in st.session_state:
+        st.session_state._last_mime = None
 
     st.markdown("# Escanear platillo")
 
@@ -305,9 +310,18 @@ def render_scan():
                 file_name = "camera.jpg"
                 mime = "image/jpeg"
 
+        # Reutiliza la última imagen si este rerun no trajo una nueva
+        if image_bytes is None and st.session_state._last_image_bytes is not None:
+            image_bytes = st.session_state._last_image_bytes
+            mime = st.session_state._last_mime
+
         if image_bytes:
+            # Guardar imagen persistente
+            st.session_state._last_image_bytes = image_bytes
+            st.session_state._last_mime = mime
+
             img = Image.open(io.BytesIO(image_bytes))
-            st.image(img, caption="Vista previa", use_container_width=True)
+            st.image(img, caption="Vista previa", use_column_width=True)
 
             # Digest para cachear por imagen (evita gastar cuota si es la misma)
             digest = hashlib.sha256(image_bytes).hexdigest()
@@ -340,8 +354,10 @@ def render_scan():
                 # Limpiar caché de análisis al cambiar imagen
                 st.session_state._analysis_cache = {}
         else:
-            st.session_state.scan_result = {"name": None, "ingredients": []}
-            st.session_state._last_digest = None
+            # Solo resetea si no hay imagen previa guardada
+            if st.session_state._last_image_bytes is None:
+                st.session_state.scan_result = {"name": None, "ingredients": []}
+                st.session_state._last_digest = None
 
     with col_right:
         st.subheader("Resultado")
@@ -350,7 +366,7 @@ def render_scan():
             st.markdown(f"### {res['name']}")
             if res["ingredients"]:
                 for ing in res["ingredients"]:
-                    st.markdown(f"- {ing}")
+                    st.markdown(f"- { ing }")
             else:
                 st.caption("No se detectaron ingredientes con suficiente confianza.")
         else:
@@ -449,7 +465,7 @@ def render_scan():
                         st.subheader("Recomendaciones")
                         st.write(data.get("recomendaciones", "Sin recomendaciones."))
                         st.markdown(
-                        "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporal y tus calorías recomendadas por día.</p>",
+                        "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporporal y tus calorías recomendadas por día.</p>",
                         unsafe_allow_html=True
                     )
 
@@ -523,7 +539,3 @@ def render_scan():
             if st.button("Cerrar", key="close_panel"):
                 st.session_state.analysis_panel = None
                 st.rerun()
-
-
-
-
