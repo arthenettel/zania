@@ -12,6 +12,8 @@ from typing import Dict, Any, Tuple
 
 import streamlit as st
 from PIL import Image
+### NUEVO: Importar la librería MQTT ###
+import paho.mqtt.client as mqtt
 
 # --- .env ---
 try:
@@ -75,6 +77,44 @@ def _num(val, default=0.0) -> float:
         pass
     return float(default)
 
+### NUEVO: Función para publicar los datos en la pantalla ESP32 ###
+# =====================
+# Helper MQTT
+# =====================
+def publish_to_esp32(data: dict):
+    """Publica los datos del platillo a un broker MQTT."""
+    MQTT_BROKER = "broker.hivemq.com"
+    MQTT_PORT = 1883
+    MQTT_TOPIC = "zania/platometro/data"
+
+    try:
+        # Usamos la versión 2 de la API de callback
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "streamlit_zania_publisher")
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        
+        # Estructura de datos limpia para el ESP32
+        payload = {
+            "name": data.get("platillo", "Platillo"),
+            "calories": data.get("kcal", 0),
+            "percentages": {
+                "fruits_veg": data.get("porcentajes", {}).get('frutas_verduras', 0),
+                "grains_cereals": data.get("porcentajes", {}).get('granos_cereales', 0),
+                "legumes": data.get("porcentajes", {}).get('leguminosas', 0),
+                "animal_origin": data.get("porcentajes", {}).get('origen_animal', 0),
+                "fats": data.get("porcentajes", {}).get('aceites_grasas_saludables', 0)
+            }
+        }
+        
+        # Convierte el diccionario a un string JSON
+        json_payload = json.dumps(payload)
+        
+        # Publica el mensaje
+        client.publish(MQTT_TOPIC, json_payload)
+        client.disconnect()
+        print(f"MQTT: Datos publicados en {MQTT_TOPIC}") # Para depuración en la consola
+    except Exception as e:
+        # Usamos st.warning para no detener la app, pero sí notificar
+        st.warning(f"No se pudo enviar los datos a la pantalla ESP32: {e}")
 
 # =====================
 # IA: detección de grupos alimenticios y calorías
@@ -282,6 +322,15 @@ def render_platometro():
                     }
                     st.session_state.platometro_kcal = kcal_data.get("kcal")
                     st.session_state.platometro_kcal_notas = kcal_data.get("notas")
+                
+                ### NUEVO: Llamada a la función para enviar los datos a la pantalla ###
+                if data:
+                    # Combinamos los datos de porcentajes y calorías antes de enviar
+                    full_data_to_send = data.copy()
+                    full_data_to_send['kcal'] = st.session_state.platometro_kcal
+                    publish_to_esp32(full_data_to_send)
+                ### FIN DEL NUEVO CÓDIGO ###
+
         else:
             st.session_state.platometro_data = None
             st.session_state.platometro_kcal = None
