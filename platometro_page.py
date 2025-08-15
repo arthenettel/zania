@@ -82,38 +82,28 @@ def _num(val, default=0.0) -> float:
 # Helper MQTT
 # =====================
 def publish_to_esp32(data: dict):
-    """Publica los datos del platillo a un broker MQTT."""
     MQTT_BROKER = "broker.hivemq.com"
     MQTT_PORT = 1883
     MQTT_TOPIC = "zania/platometro/data"
-
     try:
-        # Usamos la versión 2 de la API de callback
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "streamlit_zania_publisher")
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        
-        # Estructura de datos limpia para el ESP32
         payload = {
             "name": data.get("platillo", "Platillo"),
-            "calories": data.get("kcal", 0),
+            "calories": _num(data.get("kcal", 0)),
             "percentages": {
-                "fruits_veg": data.get("porcentajes", {}).get('frutas_verduras', 0),
-                "grains_cereals": data.get("porcentajes", {}).get('granos_cereales', 0),
-                "legumes": data.get("porcentajes", {}).get('leguminosas', 0),
-                "animal_origin": data.get("porcentajes", {}).get('origen_animal', 0),
-                "fats": data.get("porcentajes", {}).get('aceites_grasas_saludables', 0)
+                "fruits_veg": _num(data.get("porcentajes", {}).get('frutas_verduras', 0)),
+                "grains_cereals": _num(data.get("porcentajes", {}).get('granos_cereales', 0)),
+                "legumes": _num(data.get("porcentajes", {}).get('leguminosas', 0)),
+                "animal_origin": _num(data.get("porcentajes", {}).get('origen_animal', 0)),
+                "fats": _num(data.get("porcentajes", {}).get('aceites_grasas_saludables', 0))
             }
         }
-        
-        # Convierte el diccionario a un string JSON
         json_payload = json.dumps(payload)
-        
-        # Publica el mensaje
         client.publish(MQTT_TOPIC, json_payload)
         client.disconnect()
-        print(f"MQTT: Datos publicados en {MQTT_TOPIC}") # Para depuración en la consola
+        print(f"MQTT: Datos publicados exitosamente en el topic '{MQTT_TOPIC}'")
     except Exception as e:
-        # Usamos st.warning para no detener la app, pero sí notificar
         st.warning(f"No se pudo enviar los datos a la pantalla ESP32: {e}")
 
 # =====================
