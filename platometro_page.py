@@ -5,6 +5,9 @@ Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
   alimenticios (1: Frutas y verduras; 2: Granos y cereales; 3: Leguminosas; 4: Origen animal;
   5: Aceites y grasas saludables). Luego se compara contra las recomendaciones del
   Plato del Bien Comer (México).
+
+Cambio solicitado: mostrar **dos gráficas lado a lado en una sección aparte**
+**debajo** del recordatorio de agua. (No se muestran en la sección de Resultados.)
 """
 from __future__ import annotations
 import os
@@ -17,7 +20,7 @@ from typing import Dict, Any, Tuple
 import streamlit as st
 from PIL import Image
 
-# --- graficas ---
+# --- Plotly ---
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -298,50 +301,55 @@ def render_platometro():
             else:
                 st.warning("No se pudieron estimar las calorías para esta imagen.")
 
-            # -------- Gráficas (Plotly) --------
-            st.subheader("📊 Distribución estimada por grupos")
-            etiquetas = [
-                "🥗 Frutas y verduras",
-                "🌾 Granos y cereales",
-                "🫘 Leguminosas",
-                "🍗 Origen animal",
-                "🫒 Aceites/grasas saludables",
-            ]
-            valores_est = [
-                p.get("frutas_verduras", 0.0),
-                p.get("granos_cereales", 0.0),
-                p.get("leguminosas", 0.0),
-                p.get("origen_animal", 0.0),
-                p.get("aceites_grasas_saludables", 0.0),
-            ]
-            fig_px = px.pie(
-                values=valores_est,
-                names=etiquetas,
-                hole=0.4,
-            )
-            fig_px.update_traces(textinfo="percent+label")
-            fig_px.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_px, use_container_width=True)
-
-            st.subheader("✅ Recomendación del Plato del Bien Comer")
-            valores_obj = [
-                TARGETS["frutas_verduras"],
-                TARGETS["granos_cereales"],
-                TARGETS["leguminosas"],
-                TARGETS["origen_animal"],
-                TARGETS["aceites_grasas_saludables"],
-            ]
-            fig_go = go.Figure(
-                data=[
-                    go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent+label")
-                ]
-            )
-            fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_go, use_container_width=True)
-
             # Recomendaciones (se mantienen)
             st.subheader("Recomendaciones")
             st.write(_recommendations(p))
 
     st.divider()
     st.info("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día**.")
+
+    # =====================
+    # Sección de gráficas (abajo del recordatorio)
+    # =====================
+    data = st.session_state.platometro_data
+    if data:
+        p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
+        etiquetas = [
+            "🥗 Frutas y verduras",
+            "🌾 Granos y cereales",
+            "🫘 Leguminosas",
+            "🍗 Origen animal",
+            "🫒 Aceites/grasas saludables",
+        ]
+
+        valores_est = [
+            p.get("frutas_verduras", 0.0),
+            p.get("granos_cereales", 0.0),
+            p.get("leguminosas", 0.0),
+            p.get("origen_animal", 0.0),
+            p.get("aceites_grasas_saludables", 0.0),
+        ]
+
+        valores_obj = [
+            TARGETS["frutas_verduras"],
+            TARGETS["granos_cereales"],
+            TARGETS["leguminosas"],
+            TARGETS["origen_animal"],
+            TARGETS["aceites_grasas_saludables"],
+        ]
+
+        st.markdown("## Comparativa de distribución por grupos alimenticios")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📊 Distribución estimada")
+            fig_px = px.pie(values=valores_est, names=etiquetas, hole=0.4)
+            fig_px.update_traces(textinfo="percent+label")
+            fig_px.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig_px, use_container_width=True)
+
+        with col2:
+            st.subheader("✅ Recomendación oficial")
+            fig_go = go.Figure(data=[go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent+label")])
+            fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig_go, use_container_width=True)
