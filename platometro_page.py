@@ -338,7 +338,7 @@ def render_platometro():
             TARGETS["aceites_grasas_saludables"],
         ]
 
-        st.markdown("## Comparativa de distribución por grupos alimenticios")
+        # st.markdown("## Comparativa de distribución por grupos alimenticios")
         col1, col2 = st.columns(2)
 
         with col1:
