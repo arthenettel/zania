@@ -376,41 +376,90 @@ def render_platometro():
             },
         }
 
-        st.markdown("---")
-        st.subheader("Enviar resultados a la pantalla (ESP32)")
-        st.caption("Flujo: Conectar puerto → Ver en pantalla. Usa Chrome/Edge en localhost.")
-        st.json(payload_mcu)
+        # ====== Enviar a pantalla por Web Serial ======
+    st.markdown("---")
+    st.subheader("📲 Enviar resultados a la pantalla")
+    st.caption("Conecta la pantalla para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
 
-        import streamlit.components.v1 as components
-        html = f"""
-<div style='display:flex;gap:8px;margin:8px 0 16px'>
-  <button id='btnConnect'>Conectar puerto</button>
-  <button id='btnSend' disabled>Ver en pantalla</button>
+    import streamlit.components.v1 as components
+    html = f"""
+<div style='display:flex;gap:10px;margin:8px 0 12px'>
+  <button id='btnConnect' class='st-like'>Conectar puerto</button>
+  <button id='btnSend' class='st-like' disabled>Ver en pantalla</button>
 </div>
-<pre id='log' style='white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:8px;min-height:120px'></pre>
+
+<!-- Estado (sin mostrar JSON) -->
+<div id="status" style="font-size:0.95rem;margin-top:6px;padding:10px 12px;border-radius:8px;display:none;"></div>
+
+<style>
+  /* Botones con estilo sobrio tipo Streamlit */
+  .st-like {{
+    padding: 0.5rem 0.9rem;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 0.5rem;
+    background: white;
+    color: #111827;
+    cursor: pointer;
+  }}
+  .st-like[disabled] {{
+    opacity: 0.6;
+    cursor: not-allowed;
+  }}
+  /* Estado */
+  #status.ok {{
+    display:block;
+    background: rgba(16,185,129,0.15);
+    color:#10b981;
+    border:1px solid rgba(16,185,129,0.35);
+  }}
+  #status.err {{
+    display:block;
+    background: rgba(239,68,68,0.15);
+    color:#ef4444;
+    border:1px solid rgba(239,68,68,0.35);
+  }}
+</style>
+
 <script>
   let port, writer;
-  function log(t){{ const el = document.getElementById('log'); el.textContent += t + "\\n"; el.scrollTop = el.scrollHeight; }}
-  async function connect(){{
+  const STATUS = document.getElementById('status');
+
+  function setStatus(msg, cls) {{
+    STATUS.className = cls || 'ok';
+    STATUS.textContent = msg || '';
+    STATUS.style.display = 'block';
+  }}
+
+  async function connect() {{
     try {{
-      if (!('serial' in navigator)) {{ alert('Web Serial no disponible. Usa Chrome o Edge.'); return; }}
+      if (!('serial' in navigator)) {{
+        alert('Web Serial no disponible. Usa Chrome o Edge.');
+        return;
+      }}
       port = await navigator.serial.requestPort();
       await port.open({{ baudRate: 115200 }});
       writer = port.writable.getWriter();
       document.getElementById('btnSend').disabled = false;
-      log('✓ Puerto abierto a 115200');
-    }} catch(e) {{ log('Error al abrir: ' + e.message); }}
+      setStatus('Puerto abierto a 115200', 'ok');
+    }} catch (e) {{
+      setStatus('Error al abrir: ' + e.message, 'err');
+    }}
   }}
-  async function send(){{
+
+  async function send() {{
     try {{
+      // Python incrusta aquí el objeto JSON listo
       const payload = {json.dumps(payload_mcu)};
       const txt = JSON.stringify(payload) + "\\n";
       await writer.write(new TextEncoder().encode(txt));
-      log('→ Enviado: ' + txt.trim());
-    }} catch(e) {{ log('Error al escribir: ' + e.message); }}
+      setStatus('Enviado correctamente', 'ok');  // sin mostrar el JSON
+    }} catch (e) {{
+      setStatus('Error al escribir: ' + e.message, 'err');
+    }}
   }}
+
   document.getElementById('btnConnect').addEventListener('click', connect);
   document.getElementById('btnSend').addEventListener('click', send);
 </script>
 """
-        components.html(html, height=260)
+    components.html(html, height=140)
