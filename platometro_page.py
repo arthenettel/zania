@@ -322,7 +322,7 @@ def render_platometro():
             "🌾 Granos y cereales",
             "🫘 Leguminosas",
             "🍗 Origen animal",
-            "🫒 Aceites/grasas saludables",
+            "🫒 Aceites y grasas saludables",
         ]
 
         valores_est = [
@@ -346,13 +346,13 @@ def render_platometro():
         with col1:
             st.subheader("📊 Distribución estimada")
             fig_px = px.pie(values=valores_est, names=etiquetas, hole=0.4)
-            fig_px.update_traces(textinfo="percent+label")
+            fig_px.update_traces(textinfo="percent")
             fig_px.update_layout(margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig_px, use_container_width=True)
 
         with col2:
             st.subheader("✅ Recomendación oficial")
-            fig_go = go.Figure(data=[go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent+label")])
+            fig_go = go.Figure(data=[go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent")])
             fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig_go, use_container_width=True)
 
@@ -383,40 +383,46 @@ def render_platometro():
 
     import streamlit.components.v1 as components
     html = f"""
-<div style='display:flex;gap:10px;margin:8px 0 12px'>
-  <button id='btnConnect' class='st-like'>Conectar puerto</button>
-  <button id='btnSend' class='st-like' disabled>Ver en pantalla</button>
+<div style='display:flex;gap:12px;margin:10px 0 14px'>
+  <button id='btnConnect' class='st-btn'>Conectar puerto</button>
+  <button id='btnSend' class='st-btn' disabled>Ver en pantalla</button>
 </div>
 
-<!-- Estado (sin mostrar JSON) -->
-<div id="status" style="font-size:0.95rem;margin-top:6px;padding:10px 12px;border-radius:8px;display:none;"></div>
+<!-- Estado -->
+<div id="status" style="margin-top:10px;display:none;" class="st-status"></div>
 
 <style>
-  /* Botones con estilo sobrio tipo Streamlit */
-  .st-like {{
-    padding: 0.5rem 0.9rem;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 0.5rem;
-    background: white;
-    color: #111827;
+  .st-btn {{
+    font-family: "Source Sans Pro", sans-serif;
+    font-size: 1rem;
+    padding: 0.6rem 1.4rem;
+    border-radius: 0.6rem;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: #111827;
+    color: #f3f4f6;
     cursor: pointer;
+    transition: background 0.2s, color 0.2s;
   }}
-  .st-like[disabled] {{
-    opacity: 0.6;
+  .st-btn:hover:enabled {{
+    background: #1f2937;
+  }}
+  .st-btn[disabled] {{
+    opacity: 0.5;
     cursor: not-allowed;
   }}
-  /* Estado */
-  #status.ok {{
-    display:block;
-    background: rgba(16,185,129,0.15);
-    color:#10b981;
-    border:1px solid rgba(16,185,129,0.35);
+  .st-status {{
+    font-family: "Source Sans Pro", sans-serif;
+    font-size: 1rem;
+    padding: 0.6rem 1rem;
+    border-radius: 0.6rem;
+    border: 1px solid rgba(16,185,129,0.35);
+    background: rgba(16,185,129,0.1);
+    color: #10b981;
   }}
-  #status.err {{
-    display:block;
-    background: rgba(239,68,68,0.15);
-    color:#ef4444;
-    border:1px solid rgba(239,68,68,0.35);
+  .st-status.err {{
+    border-color: rgba(239,68,68,0.35);
+    background: rgba(239,68,68,0.1);
+    color: #ef4444;
   }}
 </style>
 
@@ -425,9 +431,9 @@ def render_platometro():
   const STATUS = document.getElementById('status');
 
   function setStatus(msg, cls) {{
-    STATUS.className = cls || 'ok';
+    STATUS.className = 'st-status ' + (cls || '');
     STATUS.textContent = msg || '';
-    STATUS.style.display = 'block';
+    STATUS.style.display = msg ? 'block' : 'none';
   }}
 
   async function connect() {{
@@ -440,7 +446,7 @@ def render_platometro():
       await port.open({{ baudRate: 115200 }});
       writer = port.writable.getWriter();
       document.getElementById('btnSend').disabled = false;
-      setStatus('Puerto abierto a 115200', 'ok');
+      setStatus('Puerto abierto a 115200', '');
     }} catch (e) {{
       setStatus('Error al abrir: ' + e.message, 'err');
     }}
@@ -448,11 +454,10 @@ def render_platometro():
 
   async function send() {{
     try {{
-      // Python incrusta aquí el objeto JSON listo
       const payload = {json.dumps(payload_mcu)};
       const txt = JSON.stringify(payload) + "\\n";
       await writer.write(new TextEncoder().encode(txt));
-      setStatus('Enviado correctamente', 'ok');  // sin mostrar el JSON
+      setStatus('Enviado correctamente', '');
     }} catch (e) {{
       setStatus('Error al escribir: ' + e.message, 'err');
     }}
@@ -462,4 +467,4 @@ def render_platometro():
   document.getElementById('btnSend').addEventListener('click', send);
 </script>
 """
-    components.html(html, height=140)
+    components.html(html, height=160)
