@@ -1,6 +1,10 @@
 """
 Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
 
+• Flujo: subir/tomar foto → botón "Calcular" → IA (Gemini) estima proporción por grupos
+  alimenticios (1: Frutas y verduras; 2: Granos y cereales; 3: Leguminosas; 4: Origen animal;
+  5: Aceites y grasas saludables). Luego se compara contra las recomendaciones del
+  Plato del Bien Comer (México).
 """
 from __future__ import annotations
 import os
@@ -12,8 +16,6 @@ from typing import Dict, Any, Tuple
 
 import streamlit as st
 from PIL import Image
-### NUEVO: Importar la librería MQTT ###
-import paho.mqtt.client as mqtt
 
 # --- .env ---
 try:
@@ -77,34 +79,6 @@ def _num(val, default=0.0) -> float:
         pass
     return float(default)
 
-### NUEVO: Función para publicar los datos en la pantalla ESP32 ###
-# =====================
-# Helper MQTT
-# =====================
-def publish_to_esp32(data: dict):
-    MQTT_BROKER = "broker.hivemq.com"
-    MQTT_PORT = 1883
-    MQTT_TOPIC = "zania/platometro/data"
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "streamlit_zania_publisher")
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        payload = {
-            "name": data.get("platillo", "Platillo"),
-            "calories": _num(data.get("kcal", 0)),
-            "percentages": {
-                "fruits_veg": _num(data.get("porcentajes", {}).get('frutas_verduras', 0)),
-                "grains_cereals": _num(data.get("porcentajes", {}).get('granos_cereales', 0)),
-                "legumes": _num(data.get("porcentajes", {}).get('leguminosas', 0)),
-                "animal_origin": _num(data.get("porcentajes", {}).get('origen_animal', 0)),
-                "fats": _num(data.get("porcentajes", {}).get('aceites_grasas_saludables', 0))
-            }
-        }
-        json_payload = json.dumps(payload)
-        client.publish(MQTT_TOPIC, json_payload)
-        client.disconnect()
-        print(f"MQTT: Datos publicados exitosamente en el topic '{MQTT_TOPIC}'")
-    except Exception as e:
-        st.warning(f"No se pudo enviar los datos a la pantalla ESP32: {e}")
 
 # =====================
 # IA: detección de grupos alimenticios y calorías
@@ -235,7 +209,7 @@ def render_platometro():
 
     st.markdown("# Platómetro")
     st.caption(
-        "Analiza la proporción de **grupos alimenticios** de tu platillo y compara con el **Plato del Bien Comer**. "
+        "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
     )
 
@@ -312,15 +286,6 @@ def render_platometro():
                     }
                     st.session_state.platometro_kcal = kcal_data.get("kcal")
                     st.session_state.platometro_kcal_notas = kcal_data.get("notas")
-                
-                ### NUEVO: Llamada a la función para enviar los datos a la pantalla ###
-                if data:
-                    # Combinamos los datos de porcentajes y calorías antes de enviar
-                    full_data_to_send = data.copy()
-                    full_data_to_send['kcal'] = st.session_state.platometro_kcal
-                    publish_to_esp32(full_data_to_send)
-                ### FIN DEL NUEVO CÓDIGO ###
-
         else:
             st.session_state.platometro_data = None
             st.session_state.platometro_kcal = None
@@ -364,7 +329,3 @@ def render_platometro():
 
     st.divider()
     st.info("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día**.")
-
-
-
-
