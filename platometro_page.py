@@ -217,7 +217,7 @@ def render_platometro():
         st.session_state.platometro_kcal = None
         st.session_state.platometro_kcal_notas = None
 
-    st.markdown("# Platómetro 🍽️")
+    st.markdown("# Platómetro")
     st.caption(
         "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
@@ -226,7 +226,7 @@ def render_platometro():
     left, gap, right = st.columns([1, 0.08, 1])
 
     with left:
-        st.subheader("1. Sube o toma una foto")
+        st.subheader("Sube o toma una foto")
         metodo = st.radio("Selecciona el método de captura", ["Subir imagen", "Tomar foto"], index=0, horizontal=True)
 
         image_bytes = None
@@ -248,7 +248,7 @@ def render_platometro():
 
             colA, colB = st.columns([1, 1])
             with colA:
-                calcular = st.button("Calcular Análisis", use_container_width=True, type="primary")
+                calcular = st.button("Calcular", use_container_width=True, type="primary")
             with colB:
                 force = st.checkbox("Forzar recalcular", value=False)
 
@@ -301,10 +301,10 @@ def render_platometro():
 
 
     with right:
-        st.subheader("2. Resultados del Análisis")
+        st.subheader("Resultados")
         data = st.session_state.platometro_data
         if not data:
-            st.info("Sube o toma una foto y pulsa **Calcular Análisis** para ver los resultados.")
+            st.info("Sube o toma una foto y pulsa **Calcular** para ver los resultados.")
         else:
             nombre = data.get("platillo") or "Platillo"
             p = data.get("porcentajes") or {}
