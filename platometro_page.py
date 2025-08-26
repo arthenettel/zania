@@ -16,6 +16,8 @@ from typing import Dict, Any, Tuple
 
 import streamlit as st
 from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
 
 # --- .env ---
 try:
@@ -143,37 +145,8 @@ def _call_gemini_kcal(image_bytes: bytes, mime: str) -> Dict[str, Any]:
 
 
 # =====================
-# Lógica de evaluación (se mantiene por si la vuelves a usar)
+# Lógica de evaluación y recomendaciones
 # =====================
-
-def _score_from_percentages(p: Dict[str, float]) -> Tuple[int, str]:
-    """Calcula calificación 1-5 y devuelve SOLO desviación y mensaje (sin desglose)."""
-    if not p:
-        return 1, "No se pudo estimar la distribución."
-    total_error = 0.0
-    for key, tgt in TARGETS.items():
-        val = float(_num(p.get(key, 0.0)))
-        err = abs(val - tgt) / max(tgt, 1)
-        total_error += err
-    avg_err_pct = (total_error / len(TARGETS)) * 100
-    if avg_err_pct <= 20:
-        cal = 5
-        msg = "Excelente alineación con el Plato del Bien Comer."
-    elif avg_err_pct <= 40:
-        cal = 4
-        msg = "Buena composición con pequeñas desviaciones."
-    elif avg_err_pct <= 60:
-        cal = 3
-        msg = "Aceptable, hay áreas de mejora en el balance del plato."
-    elif avg_err_pct <= 80:
-        cal = 2
-        msg = "Desbalance notable; conviene ajustar porciones."
-    else:
-        cal = 1
-        msg = "Distribución poco recomendable según el Plato del Bien Comer."
-    explicacion = f"Desviación promedio: {avg_err_pct:.1f}%. {msg}"
-    return cal, explicacion
-
 
 def _recommendations(p: Dict[str, float]) -> str:
     recs = []
@@ -187,12 +160,49 @@ def _recommendations(p: Dict[str, float]) -> str:
     if not recs:
         recs.append("La distribución es adecuada; mantiene el balance propuesto por el Plato del Bien Comer.")
     recs.append("Tip NOM-043: prefiere agua simple, porciones adecuadas y alimentos naturales.")
-    return "\n".join(recs)
-
+    return "\n".join(f"- {rec}" for rec in recs)
 
 # =====================
 # UI / Render
 # =====================
+
+def _render_comparison_chart(detected_p: Dict[str, float], target_p: Dict[str, float]):
+    """Genera y muestra dos gráficas de pastel comparando porcentajes detectados vs. objetivo."""
+    labels_map = {
+        "frutas_verduras": "Frutas y Verduras",
+        "granos_cereales": "Granos y Cereales",
+        "leguminosas": "Leguminosas",
+        "origen_animal": "Origen Animal",
+        "aceites_grasas_saludables": "Aceites y Grasas",
+    }
+    
+    labels = list(labels_map.values())
+    detected_values = [detected_p.get(k, 0) for k in labels_map.keys()]
+    target_values = [target_p.get(k, 0) for k in labels_map.keys()]
+    
+    # Colores consistentes para cada categoría
+    colors = ['#4CAF50', '#FFC107', '#9C27B0', '#F44336', '#2196F3']
+    
+    # Crear figura con dos subplots (gráficas)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Gráfica 1: Tu Platillo
+    ax1.pie(detected_values, labels=None, autopct='%1.1f%%', startangle=90, colors=colors,
+            wedgeprops=dict(width=0.4, edgecolor='w'))
+    ax1.set_title('Tu Platillo', fontsize=16, fontweight='bold')
+    
+    # Gráfica 2: Recomendado
+    ax2.pie(target_values, labels=None, autopct='%1.1f%%', startangle=90, colors=colors,
+            wedgeprops=dict(width=0.4, edgecolor='w'))
+    ax2.set_title('Recomendado', fontsize=16, fontweight='bold')
+    
+    # Título general y leyenda
+    fig.suptitle('Análisis vs. Plato del Bien Comer', fontsize=20, fontweight='bold')
+    fig.legend(labels, loc='lower center', ncol=len(labels), bbox_to_anchor=(0.5, 0.05))
+    
+    plt.tight_layout(rect=[0, 0.1, 1, 0.95]) # Ajustar para dar espacio a la leyenda
+    st.pyplot(fig)
+
 
 def render_platometro():
     # Estados
@@ -207,7 +217,7 @@ def render_platometro():
         st.session_state.platometro_kcal = None
         st.session_state.platometro_kcal_notas = None
 
-    st.markdown("# Platómetro")
+    st.markdown("# Platómetro 🍽️")
     st.caption(
         "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
@@ -216,18 +226,18 @@ def render_platometro():
     left, gap, right = st.columns([1, 0.08, 1])
 
     with left:
-        st.subheader("Sube o toma una foto")
-        metodo = st.radio("Selecciona el método de captura", ["Subir imagen", "Tomar foto"], index=0)
+        st.subheader("1. Sube o toma una foto")
+        metodo = st.radio("Selecciona el método de captura", ["Subir imagen", "Tomar foto"], index=0, horizontal=True)
 
         image_bytes = None
         mime = None
         if metodo == "Subir imagen":
-            up = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"], key="plato_uploader")
+            up = st.file_uploader("Sube una imagen de tu platillo", type=["jpg", "jpeg", "png"], key="plato_uploader")
             if up is not None:
                 image_bytes = up.getvalue()
                 mime = "image/png" if up.name.lower().endswith(".png") else "image/jpeg"
         else:
-            cam = st.camera_input("Tomar foto", key="plato_camera")
+            cam = st.camera_input("Toma una foto del platillo", key="plato_camera")
             if cam is not None:
                 image_bytes = cam.getvalue()
                 mime = "image/jpeg"
@@ -238,7 +248,7 @@ def render_platometro():
 
             colA, colB = st.columns([1, 1])
             with colA:
-                calcular = st.button("Calcular", use_container_width=True)
+                calcular = st.button("Calcular Análisis", use_container_width=True, type="primary")
             with colB:
                 force = st.checkbox("Forzar recalcular", value=False)
 
@@ -254,7 +264,7 @@ def render_platometro():
                 if use_cache:
                     data = st.session_state.platometro_cache["result"]
                 else:
-                    with st.spinner("Estimando proporciones con Gemini…"):
+                    with st.spinner("Analizando proporciones con Gemini…"):
                         try:
                             data = _call_gemini_groups(image_bytes, mime or "image/jpeg")
                         except Exception as e:
@@ -287,15 +297,14 @@ def render_platometro():
                     st.session_state.platometro_kcal = kcal_data.get("kcal")
                     st.session_state.platometro_kcal_notas = kcal_data.get("notas")
         else:
-            st.session_state.platometro_data = None
-            st.session_state.platometro_kcal = None
-            st.session_state.platometro_kcal_notas = None
+            st.info("Esperando imagen del platillo...")
+
 
     with right:
-        st.subheader("Resultados")
+        st.subheader("2. Resultados del Análisis")
         data = st.session_state.platometro_data
         if not data:
-            st.info("Sube/toma una foto y pulsa **Calcular** para ver los resultados.")
+            st.info("Sube o toma una foto y pulsa **Calcular Análisis** para ver los resultados.")
         else:
             nombre = data.get("platillo") or "Platillo"
             p = data.get("porcentajes") or {}
@@ -310,22 +319,36 @@ def render_platometro():
             c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
             c3.metric("🫘 Leguminosas", f"{p.get('leguminosas', 0):.0f}%", f"obj {TARGETS['leguminosas']}%")
             c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
-            c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
+            c5.metric("🥑 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
+            
+            st.markdown("---")
 
-            # -------- NUEVO: Calorías por porción --------
+            # -------- Gráfica de Pastel Comparativa --------
+            st.subheader("Gráfica Comparativa")
+            _render_comparison_chart(p, TARGETS)
+            
+            st.markdown("---")
+
+            # Calorías por porción
             kcal_val = st.session_state.platometro_kcal
             kcal_notes = st.session_state.platometro_kcal_notas
             if kcal_val is not None:
-                st.subheader("🔥 Calorías estimadas (por porción)")
-                st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
-                if kcal_notes:
-                    st.caption(kcal_notes)
+                with st.container(border=True):
+                    st.subheader("🔥 Calorías estimadas (por porción)")
+                    st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
+                    if kcal_notes:
+                        st.caption(f"Notas de la IA: *{kcal_notes}*")
             else:
                 st.warning("No se pudieron estimar las calorías para esta imagen.")
 
-            # Recomendaciones (se mantienen)
-            st.subheader("Recomendaciones")
-            st.write(_recommendations(p))
+            # Recomendaciones
+            with st.container(border=True):
+                st.subheader("💡 Recomendaciones")
+                st.markdown(_recommendations(p))
 
     st.divider()
-    st.info("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día**.")
+    st.success("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día** para mantenerte hidratado.")
+
+# Para ejecutar la app (si este es el script principal)
+if __name__ == "__main__":
+    render_platometro()
