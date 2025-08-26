@@ -86,6 +86,22 @@ def _num(val, default=0.0) -> float:
         pass
     return float(default)
 
+# =====================
+# Session state seguro
+# =====================
+
+def _ensure_state():
+    ss = st.session_state
+    if "platometro_cache" not in ss:
+        ss.platometro_cache = {"digest": None, "result": None}
+    if "platometro_data" not in ss:
+        ss.platometro_data = None  # último resultado IA
+    if "platometro_kcal_cache" not in ss:
+        ss.platometro_kcal_cache = {"digest": None, "kcal": None, "notas": None}
+    if "platometro_kcal" not in ss:
+        ss.platometro_kcal = None
+    if "platometro_kcal_notas" not in ss:
+        ss.platometro_kcal_notas = None
 
 # =====================
 # IA: detección de grupos alimenticios y calorías
@@ -148,7 +164,6 @@ def _call_gemini_kcal(image_bytes: bytes, mime: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         return json.loads(_strip_code_fences(txt))
 
-
 # =====================
 # Recomendaciones
 # =====================
@@ -167,23 +182,12 @@ def _recommendations(p: Dict[str, float]) -> str:
     recs.append("Tip NOM-043: prefiere agua simple, porciones adecuadas y alimentos naturales.")
     return "\n".join(recs)
 
-
 # =====================
 # UI / Render
 # =====================
 
 def render_platometro():
-    # Estados
-    if "platometro_cache" not in st.session_state:
-        st.session_state.platometro_cache = {"digest": None, "result": None}
-    if "platometro_data" not in st.session_state:
-        st.session_state.platometro_data = None  # último resultado IA
-    # caché de kcal
-    if "platometro_kcal_cache" not in st.session_state:
-        st.session_state.platometro_kcal_cache = {"digest": None, "kcal": None, "notas": None}
-    if "platometro_kcal" not in st.session_state:
-        st.session_state.platometro_kcal = None
-        st.session_state.platometro_kcal_notas = None
+    _ensure_state()
 
     st.markdown("# Platómetro")
     st.caption(
@@ -277,12 +281,11 @@ def render_platometro():
         else:
             nombre = data.get("platillo") or "Platillo"
             p = data.get("porcentajes") or {}
-            # normaliza a floats seguros
-            p = {k: _num(v) for k, v in p.items()}
+            p = {k: _num(v) for k, v in p.items()}  # normaliza a floats seguros
 
             st.markdown(f"### {nombre}")
 
-            # métricas por grupo
+            # métricas por grupo (en la app puedes seguir mostrando objetivos)
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("🥗 Frutas/Verduras", f"{p.get('frutas_verduras', 0):.0f}%", f"obj {TARGETS['frutas_verduras']}%")
             c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
@@ -301,7 +304,7 @@ def render_platometro():
             else:
                 st.warning("No se pudieron estimar las calorías para esta imagen.")
 
-            # Recomendaciones (se mantienen)
+            # Recomendaciones
             st.subheader("Recomendaciones")
             st.write(_recommendations(p))
 
@@ -338,7 +341,6 @@ def render_platometro():
             TARGETS["aceites_grasas_saludables"],
         ]
 
-        # st.markdown("## Comparativa de distribución por grupos alimenticios")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -354,54 +356,50 @@ def render_platometro():
             fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig_go, use_container_width=True)
 
-# === Enviar a pantalla ESP32 (sin objetivos ni nombre del platillo) ===
-import streamlit.components.v1 as components
+    # =====================
+    # Enviar a pantalla ESP32 (Web Serial, 2 pasos)
+    # =====================
+    data = st.session_state.get("platometro_data")
+    if data:
+        p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
+        kcal_val = _num(st.session_state.get("platometro_kcal"), 0)
 
-if st.session_state.platometro_data:
-    data = st.session_state.platometro_data
-    p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
-    kcal_val = _num(st.session_state.platometro_kcal, 0)
+        # JSON simplificado para la PANTALLA (sin objetivos ni nombre)
+        payload_mcu = {
+            "kcal": int(kcal_val),
+            "porcentajes": {
+                "frutas_verduras": int(p.get("frutas_verduras", 0)),
+                "granos": int(p.get("granos_cereales", 0)),
+                "leguminosas": int(p.get("leguminosas", 0)),
+                "origen_animal": int(p.get("origen_animal", 0)),
+                "grasas": int(p.get("aceites_grasas_saludables", 0)),
+            },
+        }
 
-    # JSON simplificado para el ESP32 (sin objetivos ni nombre del platillo)
-    payload_mcu = {
-        "kcal": int(kcal_val),
-        "porcentajes": {
-            "frutas_verduras": int(p.get("frutas_verduras", 0)),
-            "granos": int(p.get("granos_cereales", 0)),
-            "leguminosas": int(p.get("leguminosas", 0)),
-            "origen_animal": int(p.get("origen_animal", 0)),
-            "grasas": int(p.get("aceites_grasas_saludables", 0)),
-        },
-    }
+        st.markdown("---")
+        st.subheader("Enviar resultados a la pantalla (ESP32)")
+        st.caption("Flujo: Conectar puerto → Ver en pantalla. Usa Chrome/Edge en localhost.")
+        st.json(payload_mcu)
 
-    st.markdown("---")
-    st.subheader("Enviar resultados a la pantalla (ESP32)")
-    st.caption("Flujo: Conectar puerto → Ver en pantalla. Usa Chrome/Edge en localhost.")
-    st.json(payload_mcu)
-
-    html = f"""
+        import streamlit.components.v1 as components
+        html = f"""
 <div style='display:flex;gap:8px;margin:8px 0 16px'>
   <button id='btnConnect'>Conectar puerto</button>
   <button id='btnSend' disabled>Ver en pantalla</button>
 </div>
-<pre id='log' style='white-space:pre-wrap;background:#111;color:#0f0;
-padding:10px;border-radius:8px;min-height:120px'></pre>
+<pre id='log' style='white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:8px;min-height:120px'></pre>
 <script>
   let port, writer;
-  function log(t){{ const el = document.getElementById('log');
-    el.textContent += t + "\\n"; el.scrollTop = el.scrollHeight; }}
+  function log(t){{ const el = document.getElementById('log'); el.textContent += t + "\\n"; el.scrollTop = el.scrollHeight; }}
   async function connect(){{
     try {{
-      if (!('serial' in navigator)) {{
-        alert('Web Serial no disponible. Usa Chrome o Edge.');
-        return;
-      }}
+      if (!('serial' in navigator)) {{ alert('Web Serial no disponible. Usa Chrome o Edge.'); return; }}
       port = await navigator.serial.requestPort();
       await port.open({{ baudRate: 115200 }});
       writer = port.writable.getWriter();
       document.getElementById('btnSend').disabled = false;
       log('✓ Puerto abierto a 115200');
-    }} catch(e){{ log('Error al abrir: ' + e.message); }}
+    }} catch(e) {{ log('Error al abrir: ' + e.message); }}
   }}
   async function send(){{
     try {{
@@ -409,10 +407,10 @@ padding:10px;border-radius:8px;min-height:120px'></pre>
       const txt = JSON.stringify(payload) + "\\n";
       await writer.write(new TextEncoder().encode(txt));
       log('→ Enviado: ' + txt.trim());
-    }} catch(e){{ log('Error al escribir: ' + e.message); }}
+    }} catch(e) {{ log('Error al escribir: ' + e.message); }}
   }}
   document.getElementById('btnConnect').addEventListener('click', connect);
   document.getElementById('btnSend').addEventListener('click', send);
 </script>
 """
-    components.html(html, height=260)
+        components.html(html, height=260)
