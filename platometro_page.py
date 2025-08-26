@@ -379,7 +379,7 @@ def render_platometro():
         # ====== Enviar a pantalla por Web Serial ======
     st.markdown("---")
     st.subheader("📲 Enviar resultados a la pantalla")
-    st.caption("Conecta la pantalla para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
+    st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
 
     import streamlit.components.v1 as components
     html = f"""
