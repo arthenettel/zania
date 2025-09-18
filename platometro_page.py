@@ -1,13 +1,5 @@
 """
-Página: Platómetro (análisis por imagen vs. Plato del Bien Comer)
-
-• Flujo: subir/tomar foto → botón "Calcular" → IA (Gemini) estima proporción por grupos
-  alimenticios (1: Frutas y verduras; 2: Granos y cereales; 3: Leguminosas; 4: Origen animal;
-  5: Aceites y grasas saludables). Luego se compara contra las recomendaciones del
-  Plato del Bien Comer (México).
-
-Cambio solicitado: mostrar **dos gráficas lado a lado en una sección aparte**
-**debajo** del recordatorio de agua. (No se muestran en la sección de Resultados.)
+Página: Platómetro
 """
 from __future__ import annotations
 import os
@@ -168,154 +160,130 @@ def _call_gemini_kcal(image_bytes: bytes, mime: str) -> Dict[str, Any]:
 # Recomendaciones
 # =====================
 
-def _recommendations(p: Dict[str, float]) -> str:
+def _recommendations_list(p: Dict[str, float]) -> list[str]:
+    """Devuelve recomendaciones simples basadas en NOM-043 (lenguaje claro)."""
     recs = []
     for key, tgt in TARGETS.items():
         val = float(_num(p.get(key, 0.0)))
-        name = key.replace("_", " ")
+        nombre = {
+            "frutas_verduras": "Incluye más frutas y verduras frescas.",
+            "granos_cereales": "Prefiere granos y cereales (mejor si son integrales).",
+            "leguminosas": "Agrega frijoles, lentejas o garbanzos.",
+            "origen_animal": "Modera carnes, huevo y lácteos; elige opciones magras.",
+            "aceites_grasas_saludables": "Usa poca grasa y prefiere aceite vegetal (oliva/canola).",
+        }[key]
         if val < tgt * 0.8:
-            recs.append(f"Aumenta {name} hasta acercarte al {tgt}% recomendado.")
+            recs.append(f"Súbele a este grupo: {nombre}")
         elif val > tgt * 1.2:
-            recs.append(f"Reduce {name} para aproximarte al {tgt}% recomendado.")
+            recs.append("Bájale a este grupo para equilibrar con los demás.")
     if not recs:
-        recs.append("La distribución es adecuada; mantiene el balance propuesto por el Plato del Bien Comer.")
-    recs.append("Tip NOM-043: prefiere agua simple, porciones adecuadas y alimentos naturales.")
-    return "\n".join(recs)
+        recs.append("¡Buen balance! Mantén porciones variadas y suficientes.")
+    # Mensajes base NOM-043 en lenguaje claro
+    recs.extend([
+        "Toma agua simple durante el día (6–8 vasos).",
+        "Prefiere alimentos naturales y evita el exceso de azúcar y sal.",
+        "Mantén horarios regulares de comida y porciones adecuadas a tu apetito.",
+    ])
+    return recs
 
 # =====================
-# UI / Render
+# UI / Render (UNA SOLA COLUMNA, ORDEN NUEVO)
 # =====================
 
 def render_platometro():
     _ensure_state()
 
-    st.markdown("# Platómetro")
+    # 1) Título + descripción + subir/tomar foto
+    st.markdown("# Platosaurus del bien comer 🦖🍽️")
     st.caption(
         "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
     )
 
-    left, gap, right = st.columns([1, 0.08, 1])
+    st.subheader("Sube o toma una foto")
+    metodo = st.radio("Selecciona el método de captura", ["Subir imagen", "Tomar foto"], index=0)
 
-    with left:
-        st.subheader("Sube o toma una foto")
-        metodo = st.radio("Selecciona el método de captura", ["Subir imagen", "Tomar foto"], index=0)
+    image_bytes = None
+    mime = None
+    if metodo == "Subir imagen":
+        up = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"], key="plato_uploader")
+        if up is not None:
+            image_bytes = up.getvalue()
+            mime = "image/png" if up.name.lower().endswith(".png") else "image/jpeg"
+    else:
+        cam = st.camera_input("Tomar foto", key="plato_camera")
+        if cam is not None:
+            image_bytes = cam.getvalue()
+            mime = "image/jpeg"
 
-        image_bytes = None
-        mime = None
-        if metodo == "Subir imagen":
-            up = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"], key="plato_uploader")
-            if up is not None:
-                image_bytes = up.getvalue()
-                mime = "image/png" if up.name.lower().endswith(".png") else "image/jpeg"
-        else:
-            cam = st.camera_input("Tomar foto", key="plato_camera")
-            if cam is not None:
-                image_bytes = cam.getvalue()
-                mime = "image/jpeg"
+    if image_bytes:
+        img = Image.open(io.BytesIO(image_bytes))
+        st.image(img, caption="Vista previa", use_container_width=True)
 
-        if image_bytes:
-            img = Image.open(io.BytesIO(image_bytes))
-            st.image(img, caption="Vista previa", use_container_width=True)
+        colA, colB = st.columns([1, 1])
+        with colA:
+            calcular = st.button("Calcular", use_container_width=True)
+        with colB:
+            force = st.checkbox("Forzar recalcular", value=False)
 
-            colA, colB = st.columns([1, 1])
-            with colA:
-                calcular = st.button("Calcular", use_container_width=True)
-            with colB:
-                force = st.checkbox("Forzar recalcular", value=False)
+        if calcular:
+            digest = hashlib.sha256(image_bytes).hexdigest()
 
-            if calcular:
-                digest = hashlib.sha256(image_bytes).hexdigest()
-
-                # ---- porcentajes por grupo (con caché) ----
-                use_cache = (
-                    st.session_state.platometro_cache["digest"] == digest
-                    and st.session_state.platometro_cache["result"] is not None
-                    and not force
-                )
-                if use_cache:
-                    data = st.session_state.platometro_cache["result"]
-                else:
-                    with st.spinner("Estimando proporciones con Gemini…"):
-                        try:
-                            data = _call_gemini_groups(image_bytes, mime or "image/jpeg")
-                        except Exception as e:
-                            st.error(f"No fue posible analizar la imagen: {e}")
-                            data = None
-                    st.session_state.platometro_cache = {"digest": digest, "result": data}
-                st.session_state.platometro_data = data
-
-                # ---- calorías por porción (con caché) ----
-                kcal_cache_ok = (
-                    st.session_state.platometro_kcal_cache["digest"] == digest
-                    and st.session_state.platometro_kcal_cache["kcal"] is not None
-                    and not force
-                )
-                if kcal_cache_ok:
-                    st.session_state.platometro_kcal = st.session_state.platometro_kcal_cache["kcal"]
-                    st.session_state.platometro_kcal_notas = st.session_state.platometro_kcal_cache["notas"]
-                else:
-                    with st.spinner("Estimando calorías por porción…"):
-                        try:
-                            kcal_data = _call_gemini_kcal(image_bytes, mime or "image/jpeg")
-                        except Exception as e:
-                            st.warning(f"No se pudieron estimar calorías: {e}")
-                            kcal_data = {"kcal": None, "notas": None}
-                    st.session_state.platometro_kcal_cache = {
-                        "digest": digest,
-                        "kcal": kcal_data.get("kcal"),
-                        "notas": kcal_data.get("notas"),
-                    }
-                    st.session_state.platometro_kcal = kcal_data.get("kcal")
-                    st.session_state.platometro_kcal_notas = kcal_data.get("notas")
-        else:
-            st.session_state.platometro_data = None
-            st.session_state.platometro_kcal = None
-            st.session_state.platometro_kcal_notas = None
-
-    with right:
-        st.subheader("Resultados")
-        data = st.session_state.platometro_data
-        if not data:
-            st.info("Sube/toma una foto y pulsa **Calcular** para ver los resultados.")
-        else:
-            nombre = data.get("platillo") or "Platillo"
-            p = data.get("porcentajes") or {}
-            p = {k: _num(v) for k, v in p.items()}  # normaliza a floats seguros
-
-            st.markdown(f"### {nombre}")
-
-            # métricas por grupo (en la app puedes seguir mostrando objetivos)
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("🥗 Frutas/Verduras", f"{p.get('frutas_verduras', 0):.0f}%", f"obj {TARGETS['frutas_verduras']}%")
-            c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
-            c3.metric("🫘 Leguminosas", f"{p.get('leguminosas', 0):.0f}%", f"obj {TARGETS['leguminosas']}%")
-            c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
-            c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
-
-            # -------- Calorías por porción --------
-            kcal_val = st.session_state.platometro_kcal
-            kcal_notes = st.session_state.platometro_kcal_notas
-            if kcal_val is not None:
-                st.subheader("🔥 Calorías estimadas (por porción)")
-                st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
-                if kcal_notes:
-                    st.caption(kcal_notes)
+            # ---- porcentajes por grupo (con caché) ----
+            use_cache = (
+                st.session_state.platometro_cache["digest"] == digest
+                and st.session_state.platometro_cache["result"] is not None
+                and not force
+            )
+            if use_cache:
+                data = st.session_state.platometro_cache["result"]
             else:
-                st.warning("No se pudieron estimar las calorías para esta imagen.")
+                with st.spinner("Estimando proporciones con Gemini…"):
+                    try:
+                        data = _call_gemini_groups(image_bytes, mime or "image/jpeg")
+                    except Exception as e:
+                        st.error(f"No fue posible analizar la imagen: {e}")
+                        data = None
+                st.session_state.platometro_cache = {"digest": digest, "result": data}
+            st.session_state.platometro_data = data
 
-            # Recomendaciones
-            st.subheader("Recomendaciones")
-            st.write(_recommendations(p))
+            # ---- calorías por porción (con caché) ----
+            kcal_cache_ok = (
+                st.session_state.platometro_kcal_cache["digest"] == digest
+                and st.session_state.platometro_kcal_cache["kcal"] is not None
+                and not force
+            )
+            if kcal_cache_ok:
+                st.session_state.platometro_kcal = st.session_state.platometro_kcal_cache["kcal"]
+                st.session_state.platometro_kcal_notas = st.session_state.platometro_kcal_cache["notas"]
+            else:
+                with st.spinner("Estimando calorías por porción…"):
+                    try:
+                        kcal_data = _call_gemini_kcal(image_bytes, mime or "image/jpeg")
+                    except Exception as e:
+                        st.warning(f"No se pudieron estimar calorías: {e}")
+                        kcal_data = {"kcal": None, "notas": None}
+                st.session_state.platometro_kcal_cache = {
+                    "digest": digest,
+                    "kcal": kcal_data.get("kcal"),
+                    "notas": kcal_data.get("notas"),
+                }
+                st.session_state.platometro_kcal = kcal_data.get("kcal")
+                st.session_state.platometro_kcal_notas = kcal_data.get("notas")
+    else:
+        st.session_state.platometro_data = None
+        st.session_state.platometro_kcal = None
+        st.session_state.platometro_kcal_notas = None
 
     st.divider()
+
+    # 2) Recordatorio de agua
     st.info("Recordatorio: consume **6 a 8 vasos (≈2 litros) de agua simple al día**.")
 
-    # =====================
-    # Sección de gráficas (abajo del recordatorio)
-    # =====================
+    # 3) Sección de gráficas
     data = st.session_state.platometro_data
     if data:
+        # st.markdown("## Gráficas")
         p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
         etiquetas = [
             "🥗 Frutas y verduras",
@@ -324,7 +292,6 @@ def render_platometro():
             "🍗 Origen animal",
             "🫒 Aceites y grasas saludables",
         ]
-
         valores_est = [
             p.get("frutas_verduras", 0.0),
             p.get("granos_cereales", 0.0),
@@ -332,7 +299,6 @@ def render_platometro():
             p.get("origen_animal", 0.0),
             p.get("aceites_grasas_saludables", 0.0),
         ]
-
         valores_obj = [
             TARGETS["frutas_verduras"],
             TARGETS["granos_cereales"],
@@ -342,29 +308,29 @@ def render_platometro():
         ]
 
         col1, col2 = st.columns(2)
-
         with col1:
-            st.subheader("📊 Distribución estimada")
+            st.subheader("📊 Tu platillo")
             fig_px = px.pie(values=valores_est, names=etiquetas, hole=0.4)
             fig_px.update_traces(textinfo="percent")
             fig_px.update_layout(margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig_px, use_container_width=True)
-
         with col2:
             st.subheader("✅ Recomendación oficial")
             fig_go = go.Figure(data=[go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent")])
             fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig_go, use_container_width=True)
 
-    # =====================
-    # Enviar a pantalla ESP32 (Web Serial, 2 pasos)
-    # =====================
+    st.divider()
+
+    # 4) Enviar a pantalla ESP32 (Web Serial)
+    st.subheader("📲 Enviar resultados a la pantalla")
+    st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
+
     data = st.session_state.get("platometro_data")
+    payload_mcu = None
     if data:
         p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
         kcal_val = _num(st.session_state.get("platometro_kcal"), 0)
-
-        # JSON simplificado para la PANTALLA (sin objetivos ni nombre)
         payload_mcu = {
             "kcal": int(kcal_val),
             "porcentajes": {
@@ -376,11 +342,6 @@ def render_platometro():
             },
         }
 
-        # ====== Enviar a pantalla por Web Serial ======
-    st.markdown("---")
-    st.subheader("📲 Enviar resultados a la pantalla")
-    st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
-
     import streamlit.components.v1 as components
     html = f"""
 <div style='display:flex;gap:12px;margin:10px 0 14px'>
@@ -389,11 +350,11 @@ def render_platometro():
 </div>
 
 <!-- Estado -->
-<div id="status" style="margin-top:10px;display:none;" class="st-status"></div>
+<div id=\"status\" style=\"margin-top:10px;display:none;\" class=\"st-status\"></div>
 
 <style>
   .st-btn {{
-    font-family: "Source Sans Pro", sans-serif;
+    font-family: \"Source Sans Pro\", sans-serif;
     font-size: 1rem;
     padding: 0.6rem 1.4rem;
     border-radius: 0.6rem;
@@ -411,7 +372,7 @@ def render_platometro():
     cursor: not-allowed;
   }}
   .st-status {{
-    font-family: "Source Sans Pro", sans-serif;
+    font-family: \"Source Sans Pro\", sans-serif;
     font-size: 1rem;
     padding: 0.6rem 1rem;
     border-radius: 0.6rem;
@@ -454,8 +415,12 @@ def render_platometro():
 
   async function send() {{
     try {{
-      const payload = {json.dumps(payload_mcu)};
-      const txt = JSON.stringify(payload) + "\\n";
+      const payload = {json.dumps(payload_mcu) if payload_mcu else 'null'};
+      if (!payload) {{
+        setStatus('Primero calcula un análisis para enviar.', 'err');
+        return;
+      }}
+      const txt = JSON.stringify(payload) + "\n";
       await writer.write(new TextEncoder().encode(txt));
       setStatus('Enviado correctamente', '');
     }} catch (e) {{
@@ -468,3 +433,46 @@ def render_platometro():
 </script>
 """
     components.html(html, height=160)
+
+    st.divider()
+
+    # 5) Sección de resultados finales (nombre, porcentajes, calorías, recomendaciones)
+    st.subheader("Resultados")
+    data = st.session_state.platometro_data
+    if not data:
+        st.info("Sube/toma una foto y pulsa **Calcular** para ver los resultados.")
+        return
+
+    nombre = data.get("platillo") or "Platillo"
+    p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}  # normaliza a floats
+
+    st.markdown(f"### {nombre}")
+
+    # Porcentajes en formato fácil de entender
+    # st.markdown("**Porcentajes por grupo (aprox.):**")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("🥗 Frutas/Verduras", f"{p.get('frutas_verduras', 0):.0f}%", f"obj {TARGETS['frutas_verduras']}%")
+    c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
+    c3.metric("🫘 Leguminosas", f"{p.get('leguminosas', 0):.0f}%", f"obj {TARGETS['leguminosas']}%")
+    c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
+    c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
+
+    # Calorías
+    kcal_val = st.session_state.platometro_kcal
+    kcal_notes = st.session_state.platometro_kcal_notas
+    if kcal_val is not None:
+        st.subheader("🔥 Calorías estimadas (por porción)")
+        st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
+        if kcal_notes:
+            st.caption(kcal_notes)
+    else:
+        st.warning("No se pudieron estimar las calorías para esta imagen.")
+
+    # Recomendaciones en viñetas (lenguaje claro, basado en NOM-043)
+    st.subheader("Recomendaciones")
+    recs = _recommendations_list(p)
+    st.markdown("\n".join([f"- {r}" for r in recs]))
+
+
+if __name__ == "__main__":
+    render_platometro()
