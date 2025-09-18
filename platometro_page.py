@@ -325,12 +325,14 @@ def render_platometro():
     st.divider()
 
     # 4) Enviar a pantalla ESP32 (Web Serial)
+    st.subheader("📲 Enviar resultados a la pantalla")
+    st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
+
     data = st.session_state.get("platometro_data")
+    payload_mcu = None
     if data:
         p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
         kcal_val = _num(st.session_state.get("platometro_kcal"), 0)
-
-        # JSON simplificado para la PANTALLA (sin objetivos ni nombre)
         payload_mcu = {
             "kcal": int(kcal_val),
             "porcentajes": {
@@ -342,11 +344,6 @@ def render_platometro():
             },
         }
 
-        # ====== Enviar a pantalla por Web Serial ======
-    st.markdown("---")
-    st.subheader("📲 Enviar resultados a la pantalla")
-    st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
-
     import streamlit.components.v1 as components
     html = f"""
 <div style='display:flex;gap:12px;margin:10px 0 14px'>
@@ -355,11 +352,11 @@ def render_platometro():
 </div>
 
 <!-- Estado -->
-<div id="status" style="margin-top:10px;display:none;" class="st-status"></div>
+<div id=\"status\" style=\"margin-top:10px;display:none;\" class=\"st-status\"></div>
 
 <style>
   .st-btn {{
-    font-family: "Source Sans Pro", sans-serif;
+    font-family: \"Source Sans Pro\", sans-serif;
     font-size: 1rem;
     padding: 0.6rem 1.4rem;
     border-radius: 0.6rem;
@@ -377,7 +374,7 @@ def render_platometro():
     cursor: not-allowed;
   }}
   .st-status {{
-    font-family: "Source Sans Pro", sans-serif;
+    font-family: \"Source Sans Pro\", sans-serif;
     font-size: 1rem;
     padding: 0.6rem 1rem;
     border-radius: 0.6rem;
@@ -420,8 +417,12 @@ def render_platometro():
 
   async function send() {{
     try {{
-      const payload = {json.dumps(payload_mcu)};
-      const txt = JSON.stringify(payload) + "\\n";
+      const payload = {json.dumps(payload_mcu) if payload_mcu else 'null'};
+      if (!payload) {{
+        setStatus('Primero calcula un análisis para enviar.', 'err');
+        return;
+      }}
+      const txt = JSON.stringify(payload) + "\n";
       await writer.write(new TextEncoder().encode(txt));
       setStatus('Enviado correctamente', '');
     }} catch (e) {{
