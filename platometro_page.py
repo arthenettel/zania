@@ -224,7 +224,7 @@ def render_platometro():
 
         colA, colB = st.columns([1, 1])
         with colA:
-            calcular = st.button("Calcular", use_container_width=True)
+            calcular = st.button("⚙️ Calcular", use_container_width=True)
         with colB:
             force = st.checkbox("Forzar recalcular", value=False)
 
