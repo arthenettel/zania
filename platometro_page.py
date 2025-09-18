@@ -166,16 +166,16 @@ def _recommendations_list(p: Dict[str, float]) -> list[str]:
     for key, tgt in TARGETS.items():
         val = float(_num(p.get(key, 0.0)))
         nombre = {
-            "frutas_verduras": "Incluye más frutas y verduras frescas.",
-            "granos_cereales": "Prefiere granos y cereales (mejor si son integrales).",
-            "leguminosas": "Agrega frijoles, lentejas o garbanzos.",
-            "origen_animal": "Modera carnes, huevo y lácteos; elige opciones magras.",
-            "aceites_grasas_saludables": "Usa poca grasa y prefiere aceite vegetal (oliva/canola).",
+            "frutas_verduras": "Frutas y verduras",
+            "granos_cereales": "Granos y cereales",
+            "leguminosas": "Leguminosas",
+            "origen_animal": "Alimentos de origen animal",
+            "aceites_grasas_saludables": "Aceites y grasas saludables",
         }[key]
         if val < tgt * 0.8:
-            recs.append(f"Súbele a este grupo: {nombre}")
+            recs.append(f"{nombre}: súbele a este grupo.")
         elif val > tgt * 1.2:
-            recs.append("Bájale a este grupo para equilibrar con los demás.")
+            recs.append(f"{nombre}: bájale para equilibrar con los demás.")
     if not recs:
         recs.append("¡Buen balance! Mantén porciones variadas y suficientes.")
     # Mensajes base NOM-043 en lenguaje claro
@@ -217,8 +217,10 @@ def render_platometro():
             mime = "image/jpeg"
 
     if image_bytes:
-        img = Image.open(io.BytesIO(image_bytes))
-        st.image(img, caption="Vista previa", use_container_width=True)
+        # NO mostrar vista previa cuando se usa cámara
+        if metodo == "Subir imagen":
+            img = Image.open(io.BytesIO(image_bytes))
+            st.image(img, caption="Vista previa", use_container_width=True)
 
         colA, colB = st.columns([1, 1])
         with colA:
