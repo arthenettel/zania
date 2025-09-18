@@ -417,12 +417,8 @@ def render_platometro():
 
   async function send() {{
     try {{
-      const payload = {json.dumps(payload_mcu) if payload_mcu else 'null'};
-      if (!payload) {{
-        setStatus('Primero calcula un análisis para enviar.', 'err');
-        return;
-      }}
-      const txt = JSON.stringify(payload) + "\n";
+      const payload = {json.dumps(payload_mcu)};
+      const txt = JSON.stringify(payload) + "\\n";
       await writer.write(new TextEncoder().encode(txt));
       setStatus('Enviado correctamente', '');
     }} catch (e) {{
