@@ -187,6 +187,33 @@ def _recommendations_list(p: Dict[str, float]) -> list[str]:
     return recs
 
 # =====================
+# NUEVO: Calificación (1..10) para enviar al ESP32
+# =====================
+
+def _balance_score_1_10(p: Dict[str, float]) -> int:
+    # Desviación relativa promedio vs TARGETS (clamp 0..1 para robustez)
+    pairs = [
+        ("frutas_verduras", "frutas_verduras"),
+        ("granos_cereales", "granos_cereales"),
+        ("leguminosas", "leguminosas"),
+        ("origen_animal", "origen_animal"),
+        ("aceites_grasas_saludables", "aceites_grasas_saludables"),
+    ]
+    devs = []
+    for key_json, key_tgt in pairs:
+        tgt = float(TARGETS[key_tgt])
+        val = float(_num(p.get(key_json, 0.0)))
+        if tgt <= 0:
+            continue
+        dr = abs(val - tgt) / tgt
+        devs.append(min(1.0, dr))
+    if not devs:
+        return 5
+    avg = sum(devs) / len(devs)  # 0 (perfecto) .. 1 (muy desviado)
+    score = 10.0 * (1.0 - avg)   # 10 perfecto, 0 pésimo
+    return int(max(1, min(10, round(score))))
+
+# =====================
 # UI / Render (UNA SOLA COLUMNA, ORDEN NUEVO)
 # =====================
 
@@ -332,10 +359,12 @@ def render_platometro():
     payload_mcu = None
     if data:
         p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
-        kcal_val = _num(st.session_state.get("platometro_kcal"), 0)
+        # NUEVO: calcular calificación 1..10 para la pantalla (ESP32 mostrará solo este número)
+        score = _balance_score_1_10(p)
+
         payload_mcu = {
-            "kcal": int(kcal_val),
-            "porcentajes": {
+            "rating": int(score),  # lo que mostrará la TFT
+            "porcentajes": {       # se usan SOLO para LEDs en el ESP32
                 "frutas_verduras": int(p.get("frutas_verduras", 0)),
                 "granos": int(p.get("granos_cereales", 0)),
                 "leguminosas": int(p.get("leguminosas", 0)),
@@ -418,7 +447,7 @@ def render_platometro():
   async function send() {{
     try {{
       const payload = {json.dumps(payload_mcu)};
-      const txt = JSON.stringify(payload) + "\\n";
+      const txt = JSON.stringify(payload) + "\n";
       await writer.write(new TextEncoder().encode(txt));
       setStatus('Enviado correctamente', '');
     }} catch (e) {{
