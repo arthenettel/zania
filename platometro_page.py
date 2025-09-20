@@ -221,7 +221,7 @@ def render_platometro():
     _ensure_state()
 
     # 1) Título + descripción + subir/tomar foto
-    st.markdown("# Platosaurus del bien comer 🦖🍽️")
+    st.markdown("# Platosauro del bien comer 🦖🍽️")
     st.caption(
         "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
