@@ -26,7 +26,7 @@ try:
 except Exception:
     genai = None
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 SYSTEM_PROMPT = (
     "Eres un asistente de visión experto en alimentos. Recibirás una foto de un platillo. "
     "Devuelve SOLO un JSON con esta forma exacta: "
