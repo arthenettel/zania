@@ -29,7 +29,7 @@ try:
 except Exception:
     genai = None
 
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # Recomendaciones Plato del Bien Comer (porcentaje por porción)
 TARGETS = {

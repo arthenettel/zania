@@ -108,7 +108,7 @@ def _call_gemini_recipes(ingredients_text: str) -> Dict[str, Any]:
     )
 
     model = genai.GenerativeModel(
-        "gemini-1.5-flash",
+        "gemini-2.5-flash",
         generation_config={"response_mime_type": "application/json"},
     )
     resp = model.generate_content([{"text": prompt}])
