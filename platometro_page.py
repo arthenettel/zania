@@ -40,22 +40,13 @@ TARGETS = {
     "aceites_grasas_saludables": 5,
 }
 
-# =====================
-# Helpers comunes
-# =====================
-
-def _strip_code_fences(text: str) -> str:
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = re.sub(r"^```[a-zA-Z0-9]*\n", "", t)
-        t = re.sub(r"\n```$", "", t)
-    return t
-
 
 def _ensure_gemini_ready() -> Tuple[bool, str]:
     if genai is None:
         return False, "Falta instalar 'google-generativeai' (añade a requirements.txt)."
-    api_key = os.getenv("GOOGLE_API_KEY") or (st.secrets.get("GOOGLE_API_KEY", None) if hasattr(st, "secrets") else None)
+    api_key = os.getenv("GOOGLE_API_KEY") or (
+        st.secrets.get("GOOGLE_API_KEY", None) if hasattr(st, "secrets") else None
+    )
     if not api_key:
         return False, "No se encontró GOOGLE_API_KEY en .env ni en st.secrets."
     try:
@@ -221,7 +212,7 @@ def render_platometro():
     _ensure_state()
 
     # 1) Título + descripción + subir/tomar foto
-    st.markdown("# Platosauro del bien comer 🦖🍽️")
+    st.markdown("# Platosaurio del bien comer 🦖🍽️")
     st.caption(
         "Analiza la proporción de **grupos alimenticios** de tu platillo y compárala con el **Plato del Bien Comer**. "
         "Los resultados son estimaciones orientativas basadas en visión por computadora."
@@ -312,47 +303,132 @@ def render_platometro():
     # 3) Sección de gráficas
     data = st.session_state.platometro_data
     if data:
-        # st.markdown("## Gráficas")
+        # Definición del orden fijo y colores de las categorías
+        ORDEN_CATEGORIAS = [
+            'frutas_verduras',
+            'origen_animal',
+            'granos_cereales',
+            'leguminosas',
+            'aceites_grasas_saludables'
+        ]
+
+        # Definición de categorías y sus colores fijos
+        CATEGORIAS = {
+            'frutas_verduras': {
+                'label': "🥗 Frutas y verduras",
+                'color': '#33EB33',  # Verde claro
+            },
+            'origen_animal': {
+                'label': "🍗 Origen animal",
+                'color': '#C70000',  # Rojo
+            },
+            'granos_cereales': {
+                'label': "🌾 Granos y cereales",
+                'color': '#F8D92C',  # Amarillo/Dorado
+            },
+            'leguminosas': {
+                'label': "🫘 Leguminosas",
+                'color': '#DF650D',  # Marrón
+            },
+            'aceites_grasas_saludables': {
+                'label': "🫒 Aceites y grasas saludables",
+                'color': '#B9910F',  # Naranja
+            }
+        }
+
         p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}
-        etiquetas = [
-            "🥗 Frutas y verduras",
-            "🌾 Granos y cereales",
-            "🫘 Leguminosas",
-            "🍗 Origen animal",
-            "🫒 Aceites y grasas saludables",
-        ]
-        valores_est = [
-            p.get("frutas_verduras", 0.0),
-            p.get("granos_cereales", 0.0),
-            p.get("leguminosas", 0.0),
-            p.get("origen_animal", 0.0),
-            p.get("aceites_grasas_saludables", 0.0),
-        ]
-        valores_obj = [
-            TARGETS["frutas_verduras"],
-            TARGETS["granos_cereales"],
-            TARGETS["leguminosas"],
-            TARGETS["origen_animal"],
-            TARGETS["aceites_grasas_saludables"],
-        ]
+        
+        # Usamos el orden fijo de categorías
+        etiquetas = [CATEGORIAS[k]['label'] for k in ORDEN_CATEGORIAS]
+        colores = [CATEGORIAS[k]['color'] for k in ORDEN_CATEGORIAS]
+        
+        # Valores en el mismo orden fijo
+        valores_est = [p.get(k, 0.0) for k in ORDEN_CATEGORIAS]
+        valores_obj = [TARGETS[k] for k in ORDEN_CATEGORIAS]
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("📊 Tu platillo")
-            fig_px = px.pie(values=valores_est, names=etiquetas, hole=0.4)
-            fig_px.update_traces(textinfo="percent")
-            fig_px.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_px, use_container_width=True)
+            # Use go.Pie with sort=False to preserve the provided order and color mapping
+            fig_left = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=etiquetas,
+                        values=valores_est,
+                        hole=0.4,
+                        textinfo="percent",
+                        marker=dict(colors=colores),
+                        sort=False,
+                        direction='clockwise',
+                        hoverinfo='label+percent'
+                    )
+                ]
+            )
+            fig_left.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(traceorder='normal'))
+            st.plotly_chart(fig_left, use_container_width=True)
         with col2:
             st.subheader("✅ Recomendación oficial")
-            fig_go = go.Figure(data=[go.Pie(labels=etiquetas, values=valores_obj, hole=0.4, textinfo="percent")])
-            fig_go.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_go, use_container_width=True)
+            fig_right = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=etiquetas,
+                        values=valores_obj,
+                        hole=0.4,
+                        textinfo="percent",
+                        marker=dict(colors=colores),
+                        sort=False,
+                        direction='clockwise',
+                        hoverinfo='label+percent'
+                    )
+                ]
+            )
+            fig_right.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(traceorder='normal'))
+            st.plotly_chart(fig_right, use_container_width=True)
+
+
+    st.divider()
+
+    # 5) Sección de resultados finales (nombre, porcentajes, calorías, recomendaciones)
+    st.subheader("Resultados")
+    data = st.session_state.platometro_data
+    if not data:
+        st.info("Sube/toma una foto y pulsa **Calcular** para ver los resultados.")
+        return
+
+    nombre = data.get("platillo") or "Platillo"
+    p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}  # normaliza a floats
+
+    st.markdown(f"### {nombre}")
+
+    # Porcentajes en formato fácil de entender
+    # st.markdown("**Porcentajes por grupo (aprox.):**")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("🥗 Frutas/Verduras", f"{p.get('frutas_verduras', 0):.0f}%", f"obj {TARGETS['frutas_verduras']}%")
+    c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
+    c3.metric("🫘 Leguminosas", f"{p.get('leguminosas', 0):.0f}%", f"obj {TARGETS['leguminosas']}%")
+    c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
+    c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
+
+    # Calorías
+    kcal_val = st.session_state.platometro_kcal
+    kcal_notes = st.session_state.platometro_kcal_notas
+    if kcal_val is not None:
+        st.subheader("🔥 Calorías estimadas (por porción)")
+        st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
+        if kcal_notes:
+            st.caption(kcal_notes)
+    else:
+        st.warning("No se pudieron estimar las calorías para esta imagen.")
+
+    # Recomendaciones en viñetas (lenguaje claro, basado en NOM-043)
+    st.subheader("Recomendaciones")
+    recs = _recommendations_list(p)
+    st.markdown("\n".join([f"- {r}" for r in recs]))
 
     st.divider()
 
     # 4) Enviar a pantalla ESP32 (Web Serial)
-    st.subheader("📲 Enviar resultados a la pantalla")
+    st.subheader("📲 Enviar resultados")
     st.caption("Conecta la pantalla a tu computadora para poder enviar los resultados al Platómetro. Usa Chrome/Edge.")
 
     data = st.session_state.get("platometro_data")
@@ -460,45 +536,6 @@ def render_platometro():
 </script>
 """
     components.html(html, height=160)
-
-    st.divider()
-
-    # 5) Sección de resultados finales (nombre, porcentajes, calorías, recomendaciones)
-    st.subheader("Resultados")
-    data = st.session_state.platometro_data
-    if not data:
-        st.info("Sube/toma una foto y pulsa **Calcular** para ver los resultados.")
-        return
-
-    nombre = data.get("platillo") or "Platillo"
-    p = {k: _num(v) for k, v in (data.get("porcentajes") or {}).items()}  # normaliza a floats
-
-    st.markdown(f"### {nombre}")
-
-    # Porcentajes en formato fácil de entender
-    # st.markdown("**Porcentajes por grupo (aprox.):**")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("🥗 Frutas/Verduras", f"{p.get('frutas_verduras', 0):.0f}%", f"obj {TARGETS['frutas_verduras']}%")
-    c2.metric("🌾 Granos/Cereales", f"{p.get('granos_cereales', 0):.0f}%", f"obj {TARGETS['granos_cereales']}%")
-    c3.metric("🫘 Leguminosas", f"{p.get('leguminosas', 0):.0f}%", f"obj {TARGETS['leguminosas']}%")
-    c4.metric("🍗 Origen animal", f"{p.get('origen_animal', 0):.0f}%", f"obj {TARGETS['origen_animal']}%")
-    c5.metric("🫒 Aceites/Grasas", f"{p.get('aceites_grasas_saludables', 0):.0f}%", f"obj {TARGETS['aceites_grasas_saludables']}%")
-
-    # Calorías
-    kcal_val = st.session_state.platometro_kcal
-    kcal_notes = st.session_state.platometro_kcal_notas
-    if kcal_val is not None:
-        st.subheader("🔥 Calorías estimadas (por porción)")
-        st.metric("Calorías", f"{_num(kcal_val, 0):.0f} kcal")
-        if kcal_notes:
-            st.caption(kcal_notes)
-    else:
-        st.warning("No se pudieron estimar las calorías para esta imagen.")
-
-    # Recomendaciones en viñetas (lenguaje claro, basado en NOM-043)
-    st.subheader("Recomendaciones")
-    recs = _recommendations_list(p)
-    st.markdown("\n".join([f"- {r}" for r in recs]))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ from typing import Tuple, List, Dict, Any
 import streamlit as st
 from PIL import Image
 
+# --- Plotly ---
+import plotly.graph_objects as go
+
 # --- Carga .env para entorno local ---
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -31,8 +34,55 @@ SYSTEM_PROMPT = (
     "Eres un asistente de visión experto en alimentos. Recibirás una foto de un platillo. "
     "Devuelve SOLO un JSON con esta forma exacta: "
     "{\"name\": \"<nombre del platillo>\", \"ingredients\": [\"ing1\", \"ing2\", \"ing3\"]}. "
-    "Si no reconoces, usa name=\"Platillo\" e ingredients=[]."
+    "Todos los valores de texto en el JSON deben estar estrictamente en español. "
+    "Si no reconoces, usa name=\"Platillo no reconocido\" e ingredients=[]."
 )
+
+# =====================
+# Constantes para las gráficas
+# =====================
+
+# Recomendaciones Plato del Bien Comer (porcentaje por porción)
+TARGETS = {
+    "frutas_verduras": 50,
+    "granos_cereales": 22,
+    "leguminosas": 15,
+    "origen_animal": 8,
+    "aceites_grasas_saludables": 5,
+}
+
+# Definición del orden fijo y colores de las categorías
+ORDEN_CATEGORIAS = [
+    'frutas_verduras',
+    'origen_animal',
+    'granos_cereales',
+    'leguminosas',
+    'aceites_grasas_saludables'
+]
+
+# Definición de categorías y sus colores fijos
+CATEGORIAS = {
+    'frutas_verduras': {
+        'label': "🥗 Frutas y verduras",
+        'color': "#33EB33",  # Verde claro
+    },
+    'origen_animal': {
+        'label': "🍗 Origen animal",
+        'color': "#C70000",  # Rojo
+    },
+    'granos_cereales': {
+        'label': "🌾 Granos y cereales",
+        'color': "#F8D92C",  # Amarillo/Dorado
+    },
+    'leguminosas': {
+        'label': "🫘 Leguminosas",
+        'color': "#DF650D",  # Marrón
+    },
+    'aceites_grasas_saludables': {
+        'label': "🫒 Aceites y grasas",
+        'color': "#B9910F",  # Naranja
+    }
+}
 
 # =====================
 # Gemini helpers
@@ -82,7 +132,8 @@ def gemini_identify(image_bytes: bytes, mime_type: str = "image/jpeg") -> Tuple[
     """Identifica nombre e ingredientes visibles (lista simple)."""
     prompt = (
         f"{SYSTEM_PROMPT}. Devuelve SOLO JSON con: "
-        "{\"name\": string, \"ingredients\": [string,...]}."
+        "{\"name\": string, \"ingredients\": [string,...]}. "
+        "Todos los valores de texto deben estar en español."
     )
     data = _call_gemini_json([
         {"text": prompt},
@@ -92,42 +143,62 @@ def gemini_identify(image_bytes: bytes, mime_type: str = "image/jpeg") -> Tuple[
     ingredients = [str(x).strip() for x in (data.get("ingredients") or []) if str(x).strip()]
     return name, ingredients
 
+
+def gemini_get_food_groups(image_bytes: bytes, mime: str) -> Dict[str, Any]:
+    """Pide a Gemini un JSON con porcentajes por grupo alimenticio."""
+    system = (
+        "Actúas como nutriólogo y experto en visión de alimentos. Analiza la imagen del platillo y "
+        "estima la composición aproximada por GRUPOS alimenticios del Plato del Bien Comer (México). "
+        "Reporta porcentajes para UNA porción que sumen ~100% en un JSON con la siguiente estructura exacta: "
+        "{\n \"porcentajes\": {\n \"frutas_verduras\": number,\n \"granos_cereales\": number,\n \"leguminosas\": number,\n \"origen_animal\": number,\n \"aceites_grasas_saludables\": number\n }\n}. "
+        "No devuelvas texto fuera del JSON."
+    )
+    data = _call_gemini_json([
+        {"text": system},
+        {"inline_data": {"mime_type": mime, "data": image_bytes}},
+    ])
+    return data.get("porcentajes") or {}
+
 # ---- Análisis por opción ----
 
 def analyze_cooking(name: str, ingredients: List[str]) -> Dict[str, Any]:
     prompt = (
-        f"{SYSTEM_PROMPT}. Para el platillo: '{name}'. Ingredientes detectados: {ingredients}. "
+        f"Para el platillo: '{name}'. Ingredientes detectados: {ingredients}. "
         "Devuelve SOLO JSON con: "
         "{\"ingredientes\":[{\"nombre\":string,\"cantidad\":string}],"
         " \"tiempo_min\":number, \"nivel\":\"básico|intermedio|difícil\","
         " \"procedimiento\":[string,...]}. "
-        "Notas: cantidades y unidades MÉTRICAS (g, ml, piezas). Cada elemento de 'procedimiento' debe ser un paso con explicación DETALLADA en un párrafo; NO agregues líneas divisorias."
+        "Notas: cantidades y unidades MÉTRICAS (g, ml, piezas). Cada elemento de 'procedimiento' debe ser un paso con explicación DETALLADA en un párrafo. "
+        "Todos los valores de texto (nombres, nivel, procedimiento) deben estar estrictamente en español."
     )
-    return _call_gemini_json([{ "text": prompt }])
+    return _call_gemini_json([{"text": prompt}])
 
 
 def analyze_nutrition(name: str, ingredients: List[str]) -> Dict[str, Any]:
     prompt = (
-        f"{SYSTEM_PROMPT}. Calcula para UNA porción del platillo '{name}'. Ingredientes: {ingredients}. "
+        f"Calcula para UNA porción del platillo '{name}'. Ingredientes: {ingredients}. "
         "Devuelve SOLO JSON con: "
         "{\"kcal\":number, \"proteinas_g\":number, \"carbohidratos_g\":number, \"grasas_g\":number, "
         " \"tabla_ingredientes\":[{\"ingrediente\":string,\"kcal\":number,\"proteinas_g\":number,\"carbohidratos_g\":number,\"grasas_g\":number}], "
         " \"recomendaciones\":string}. "
-        "Apegado a NOM-043 y Guías; si algo excede recomendaciones (azúcares, sodio, grasas saturadas), indícalo en 'recomendaciones'."
+        "Apegado a NOM-043 y Guías Alimentarias para la Población Mexicana. "
+        "Si algo excede recomendaciones (azúcares, sodio, grasas saturadas), indícalo en 'recomendaciones'. "
+        "Todos los textos (ingredientes, recomendaciones) deben estar estrictamente en español."
     )
-    return _call_gemini_json([{ "text": prompt }])
+    return _call_gemini_json([{"text": prompt}])
 
 
 def analyze_alternatives(name: str, ingredients: List[str], kcal_objetivo: float | None) -> Dict[str, Any]:
     target = kcal_objetivo or 0
     prompt = (
-        f"{SYSTEM_PROMPT}. Con base en UNA porción estimada para '{name}', kcal={target} (si 0, estímalas tú). "
+        f"Con base en UNA porción estimada para '{name}', kcal={target} (si 0, estímalas tú). "
         "Propón platillos con *cantidad calórica similar* (±10%), dos vegetarianos y dos no vegetarianos. "
         "No necesitan compartir ingredientes. Devuelve SOLO JSON: "
         "{\"kcal_objetivo\":number, \"vegetarianos\":[{\"nombre\":string,\"descripcion\":string,\"kcal\":number}], "
-        " \"no_vegetarianos\":[{\"nombre\":string,\"descripcion\":string,\"kcal\":number}]}."
+        " \"no_vegetarianos\":[{\"nombre\":string,\"descripcion\":string,\"kcal\":number}]}. "
+        "Todos los textos (nombre, descripcion) deben estar estrictamente en español."
     )
-    return _call_gemini_json([{ "text": prompt }])
+    return _call_gemini_json([{"text": prompt}])
 
 
 # =====================
@@ -181,7 +252,7 @@ def _build_report_pdf(nombre, cook, nut, alts):
     para(f"Nombre: {nombre or '—'}")
 
     # ---- Cómo cocinarlo ----
-    if cook:
+    if cook and isinstance(cook, dict):
         heading("Cómo cocinarlo", 14)
         para(f"Tiempo: {cook.get('tiempo_min','—')} min  |  Nivel: {cook.get('nivel','—')}")
 
@@ -214,7 +285,7 @@ def _build_report_pdf(nombre, cook, nut, alts):
             para(f"{i}. {p}", double_spaced=True)
 
     # ---- Información nutricional ----
-    if nut:
+    if nut and isinstance(nut, dict):
         heading("Información nutricional (por porción)", 14)
         macro = (
             f"KCal: {nut.get('kcal','—')}  |  "
@@ -232,10 +303,9 @@ def _build_report_pdf(nombre, cook, nut, alts):
             para(txt, double_spaced=True)
         heading("Recomendaciones", 12)
         para(nut.get("recomendaciones",""))
-        
 
     # ---- Alternativas similares ----
-    if alts:
+    if alts and isinstance(alts, dict):
         heading("Alternativas con calorías similares (±10%)", 14)
         veg = alts.get("vegetarianos") or []
         non = alts.get("no_vegetarianos") or []
@@ -254,7 +324,6 @@ def _build_report_pdf(nombre, cook, nut, alts):
     buf.close()
     return pdf
 
-
 # =====================
 # UI / Render
 # =====================
@@ -263,15 +332,18 @@ def render_scan():
     # Estado
     if "scan_result" not in st.session_state:
         st.session_state.scan_result = {"name": None, "ingredients": []}
+    if "food_group_result" not in st.session_state:
+        st.session_state.food_group_result = None
     if "analysis_panel" not in st.session_state:
         st.session_state.analysis_panel = None
     if "_scan_cache" not in st.session_state:
         st.session_state._scan_cache = {"digest": None, "result": None}
+    if "_groups_cache" not in st.session_state:
+        st.session_state._groups_cache = {"digest": None, "result": None}
     if "_analysis_cache" not in st.session_state:
         st.session_state._analysis_cache = {}  # key: f"{digest}:{panel}" -> data
     if "_last_digest" not in st.session_state:
         st.session_state._last_digest = None
-    # Persistencia de imagen para cámara/uploader
     if "_last_image_bytes" not in st.session_state:
         st.session_state._last_image_bytes = None
     if "_last_mime" not in st.session_state:
@@ -322,11 +394,9 @@ def render_scan():
             img = Image.open(io.BytesIO(image_bytes))
             st.image(img, caption="Vista previa", use_container_width=True)
 
-            # Digest para cachear por imagen (evita gastar cuota si es la misma)
             digest = hashlib.sha256(image_bytes).hexdigest()
             st.session_state._last_digest = digest
 
-            # Si por algún motivo perdimos scan_result pero tenemos _scan_cache del mismo digest, restáuralo
             if (
                 (not st.session_state.scan_result.get("name"))
                 and st.session_state._scan_cache.get("digest") == digest
@@ -337,7 +407,6 @@ def render_scan():
                     "ingredients": st.session_state._scan_cache["result"][1],
                 }
 
-            # Controles de análisis
             colA, colB = st.columns([1, 1])
             with colA:
                 do_analyze = st.button("🔍 Analizar ahora", use_container_width=True)
@@ -345,12 +414,13 @@ def render_scan():
                 force = st.checkbox("Forzar re-analizar", value=False)
 
             if do_analyze:
-                use_cache = (
+                # --- ANÁLISIS 1: Identificar nombre e ingredientes
+                use_cache_scan = (
                     st.session_state._scan_cache["digest"] == digest and
                     st.session_state._scan_cache["result"] is not None and
                     not force
                 )
-                if use_cache:
+                if use_cache_scan:
                     name, ingredients = st.session_state._scan_cache["result"]
                 else:
                     with st.spinner("Identificando platillo con Gemini…"):
@@ -361,28 +431,114 @@ def render_scan():
                             st.error(f"No fue posible analizar la imagen. {e}")
                             name, ingredients = None, []
                 st.session_state.scan_result = {"name": name, "ingredients": ingredients}
-                # Limpiar caché de análisis al cambiar imagen
-                st.session_state._analysis_cache = {}
+
+                # --- ANÁLISIS 2: Obtener grupos para gráficas
+                use_cache_groups = (
+                    st.session_state._groups_cache["digest"] == digest and
+                    st.session_state._groups_cache["result"] is not None and
+                    not force
+                )
+                if use_cache_groups:
+                    food_groups = st.session_state._groups_cache["result"]
+                else:
+                    with st.spinner("Estimando proporciones para la gráfica..."):
+                        try:
+                            food_groups = gemini_get_food_groups(image_bytes, mime or "image/jpeg")
+                            st.session_state._groups_cache = {"digest": digest, "result": food_groups}
+                        except Exception as e:
+                            st.warning(f"No se pudieron estimar las proporciones: {e}")
+                            food_groups = None
+                st.session_state.food_group_result = food_groups
+                st.session_state._analysis_cache = {} # Limpiar caché de análisis detallado
+                st.rerun() # Forzar un rerun para mostrar los resultados de inmediato
+
         else:
-            # Solo resetea si no hay imagen previa guardada
             if st.session_state._last_image_bytes is None:
                 st.session_state.scan_result = {"name": None, "ingredients": []}
+                st.session_state.food_group_result = None
                 st.session_state._last_digest = None
 
     with col_right:
         st.subheader("Resultado")
         res = st.session_state.scan_result
-        if res["name"]:
+        if res and res.get("name"):
             st.markdown(f"### {res['name']}")
-            if res["ingredients"]:
+            if res.get("ingredients"):
                 for ing in res["ingredients"]:
                     st.markdown(f"- {ing}")
             else:
                 st.caption("No se detectaron ingredientes con suficiente confianza.")
         else:
-            st.info("Sube/toma una foto y presiona *Analizar ahora* para obtener el resultado sin gastar llamadas innecesarias.")
+            st.info("Sube/toma una foto y presiona *Analizar ahora* para obtener el resultado.")
 
     st.divider()
+
+    # ===============================================
+    # NUEVA SECCIÓN: GRÁFICAS DE GRUPOS ALIMENTICIOS
+    # ===============================================
+    food_groups = st.session_state.get("food_group_result")
+    if food_groups and isinstance(food_groups, dict):
+        st.markdown("## Proporción de grupos alimenticios")
+
+        def _num(val, default=0.0) -> float:
+            try:
+                if isinstance(val, (int, float)):
+                    return float(val)
+                if isinstance(val, str):
+                    m = re.search(r"[-+]?\d*\.?\d+", val)
+                    if m:
+                        return float(m.group(0))
+            except Exception:
+                pass
+            return float(default)
+
+        p = {k: _num(v) for k, v in food_groups.items()}
+        
+        etiquetas = [CATEGORIAS[k]['label'] for k in ORDEN_CATEGORIAS]
+        colores = [CATEGORIAS[k]['color'] for k in ORDEN_CATEGORIAS]
+        
+        valores_est = [p.get(k, 0.0) for k in ORDEN_CATEGORIAS]
+        valores_obj = [TARGETS[k] for k in ORDEN_CATEGORIAS]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📊 Tu platillo")
+            fig_left = go.Figure(
+                data=[go.Pie(
+                    labels=etiquetas,
+                    values=valores_est,
+                    hole=0.4,
+                    textinfo="percent",
+                    marker=dict(colors=colores),
+                    sort=False,
+                    direction='clockwise',
+                    hoverinfo='label+percent'
+                )]
+            )
+            fig_left.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(traceorder='normal'))
+            st.plotly_chart(fig_left, use_container_width=True)
+        with col2:
+            st.subheader("✅ Recomendación oficial")
+            fig_right = go.Figure(
+                data=[go.Pie(
+                    labels=etiquetas,
+                    values=valores_obj,
+                    hole=0.4,
+                    textinfo="percent",
+                    marker=dict(colors=colores),
+                    sort=False,
+                    direction='clockwise',
+                    hoverinfo='label+percent'
+                )]
+            )
+            fig_right.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(traceorder='normal'))
+            st.plotly_chart(fig_right, use_container_width=True)
+        
+        st.divider()
+
+    # ===============================================
+    # FIN DE LA SECCIÓN DE GRÁFICAS
+    # ===============================================
 
     # Sección inferior: Analiza tu platillo
     st.markdown("## Analiza tu platillo")
@@ -392,53 +548,61 @@ def render_scan():
     with col1:
         if st.button("🍳 Cómo cocinarlo", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Cómo cocinarlo"
+            st.rerun()
     with col2:
         if st.button("📊 Información nutricional", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Información nutricional"
+            st.rerun()
     with col3:
         if st.button("🔁 Alternativas similares", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Alternativas similares"
+            st.rerun()
     with col4:
         if st.button("📝 Generar reporte", use_container_width=True, disabled=disabled):
             st.session_state.analysis_panel = "Generar reporte"
+            st.rerun()
 
     if st.session_state.analysis_panel:
         panel = st.session_state.analysis_panel
         with st.container(border=True):
             st.markdown(f"### {panel}")
 
-            # Ejecutar análisis bajo demanda y cachear por (digest,panel)
             cache_key = f"{st.session_state._last_digest}:{panel}"
             data = st.session_state._analysis_cache.get(cache_key)
-
-            # >>> Cambiado: ya no exigimos _last_digest; basta con tener nombre <<<
+            
             has_name = bool(st.session_state.scan_result.get("name"))
             if data is None and has_name:
                 name = st.session_state.scan_result.get("name")
                 ings = st.session_state.scan_result.get("ingredients", [])
                 try:
-                    if panel == "Cómo cocinarlo":
-                        data = analyze_cooking(name, ings)
-                    elif panel == "Información nutricional":
-                        data = analyze_nutrition(name, ings)
-                    elif panel == "Alternativas similares":
-                        # Si ya calculamos kcal en el panel de nutrición, úsalo como objetivo
-                        nut_key = f"{st.session_state._last_digest}:Información nutricional"
-                        kcal_obj = None
-                        if nut_key in st.session_state._analysis_cache:
-                            kcal_obj = st.session_state._analysis_cache[nut_key].get("kcal")
-                        data = analyze_alternatives(name, ings, kcal_obj)
-                    else:
-                        data = {"msg": "Próximamente"}
+                    with st.spinner(f"Analizando '{panel}'..."):
+                        if panel == "Cómo cocinarlo":
+                            data = analyze_cooking(name, ings)
+                        elif panel == "Información nutricional":
+                            data = analyze_nutrition(name, ings)
+                        elif panel == "Alternativas similares":
+                            nut_key = f"{st.session_state._last_digest}:Información nutricional"
+                            kcal_obj = None
+                            if nut_key in st.session_state._analysis_cache:
+                                nut_data = st.session_state._analysis_cache[nut_key]
+                                if isinstance(nut_data, list) and nut_data:
+                                    nut_data = nut_data[0]
+                                if isinstance(nut_data, dict):
+                                    kcal_obj = nut_data.get("kcal")
+                            data = analyze_alternatives(name, ings, kcal_obj)
+                        else:
+                            data = {"msg": "Próximamente"}
                     st.session_state._analysis_cache[cache_key] = data
                 except Exception as e:
                     st.error(f"No fue posible completar el análisis: {e}")
                     data = None
 
+            if isinstance(data, list):
+                data = data[0] if data else None
+            
             # Renderizado por opción
-            if data:
+            if data and isinstance(data, dict):
                 if panel == "Cómo cocinarlo":
-                    # Ingredientes (tabla) + tiempo/nivel + procedimiento enumerado
                     st.subheader("Ingredientes")
                     tabla = data.get("ingredientes") or []
                     if isinstance(tabla, list) and tabla and isinstance(tabla[0], dict):
@@ -456,7 +620,7 @@ def render_scan():
                     st.subheader("Procedimiento")
                     pasos = data.get("procedimiento") or []
                     for idx, paso in enumerate(pasos, start=1):
-                        st.markdown(f"{idx}.** {paso}")  # sin líneas divisorias
+                        st.markdown(f"**{idx}.** {paso}")
 
                 elif panel == "Información nutricional":
                     colA, colB, colC, colD = st.columns(4)
@@ -476,78 +640,67 @@ def render_scan():
                     with c2:
                         st.subheader("Recomendaciones")
                         st.write(data.get("recomendaciones", "Sin recomendaciones."))
-                        st.markdown(
-                            "<p style='font-size:14px; color:gray;'>💡 Tip: Usa la <b>Calculadora Nutricional</b> para conocer tu Índice de Masa Corporal y tus calorías recomendadas por día.</p>",
-                            unsafe_allow_html=True
-                        )
 
                 elif panel == "Alternativas similares":
                     st.caption("Platillos con *cantidad calórica similar* (±10%) a la porción analizada.")
                     veg = data.get("vegetarianos") or []
                     non = data.get("no_vegetarianos") or []
-                    items = (veg[:2] + non[:2])[:4]
-                    # 4 secciones
-                    c1, c2, c3, c4 = st.columns(4)
-                    cols = [c1, c2, c3, c4]
-                    for col, item in zip(cols, items):
-                        with col:
-                            st.markdown(f"{item.get('nombre','—')}")
-                            if item.get('kcal') is not None:
-                                st.caption(f"≈ {item['kcal']} kcal")
+                    
+                    if veg:
+                        st.subheader("Opciones Vegetarianas")
+                        for item in veg:
+                            st.markdown(f"**{item.get('nombre','—')}** (≈ {item.get('kcal','—')} kcal)")
+                            st.write(item.get('descripcion', ''))
+                    
+                    if non:
+                        st.subheader("Opciones No Vegetarianas")
+                        for item in non:
+                            st.markdown(f"**{item.get('nombre','—')}** (≈ {item.get('kcal','—')} kcal)")
                             st.write(item.get('descripcion', ''))
 
                 elif panel == "Generar reporte":
-                    st.caption("Genera un PDF con el **nombre del platillo** y los resultados de: **Cómo cocinarlo**, **Información nutricional** y **Alternativas similares**.")
-                    # Obtener/calc datos de cada sección SIN alterar las otras
-                    digest = st.session_state._last_digest
-                    name = st.session_state.scan_result.get("name")
-                    ings = st.session_state.scan_result.get("ingredients", [])
-
-                    cook_key = f"{digest}:Cómo cocinarlo"
-                    nut_key  = f"{digest}:Información nutricional"
-                    alt_key  = f"{digest}:Alternativas similares"
-
-                    cook = st.session_state._analysis_cache.get(cook_key)
-                    if cook is None and name:
-                        try:
-                            cook = analyze_cooking(name, ings)
-                            st.session_state._analysis_cache[cook_key] = cook
-                        except Exception as e:
-                            st.warning(f"No se pudo obtener 'Cómo cocinarlo': {e}")
-                            cook = None
-
-                    nut = st.session_state._analysis_cache.get(nut_key)
-                    if nut is None and name:
-                        try:
-                            nut = analyze_nutrition(name, ings)
-                            st.session_state._analysis_cache[nut_key] = nut
-                        except Exception as e:
-                            st.warning(f"No se pudo obtener 'Información nutricional': {e}")
-                            nut = None
-
-                    alts = st.session_state._analysis_cache.get(alt_key)
-                    if alts is None and name:
-                        kcal_obj = (nut or {}).get("kcal") if isinstance(nut, dict) else None
-                        try:
-                            alts = analyze_alternatives(name, ings, kcal_obj)
-                            st.session_state._analysis_cache[alt_key] = alts
-                        except Exception as e:
-                            st.warning(f"No se pudo obtener 'Alternativas similares': {e}")
-                            alts = None
-
+                    st.caption("Genera un PDF con el **nombre del platillo** y los resultados de las otras secciones.")
+                    
                     if st.button("📄 Generar", use_container_width=True):
-                        try:
-                            pdf_bytes = _build_report_pdf(name, cook, nut, alts)
-                            st.download_button(
-                                "⬇️ Descargar reporte (PDF)",
-                                data=pdf_bytes,
-                                file_name=f"reporte_{(name or 'platillo').lower().replace(' ','_')}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                        except Exception as e:
-                            st.error(str(e))
+                        with st.spinner("Creando reporte PDF..."):
+                            digest = st.session_state._last_digest
+                            name = st.session_state.scan_result.get("name")
+                            ings = st.session_state.scan_result.get("ingredients", [])
+
+                            def get_panel_data(panel_name, analysis_func, *args):
+                                key = f"{digest}:{panel_name}"
+                                panel_data = st.session_state._analysis_cache.get(key)
+                                if panel_data is None and name:
+                                    try:
+                                        panel_data = analysis_func(*args)
+                                        st.session_state._analysis_cache[key] = panel_data
+                                    except Exception as e:
+                                        st.warning(f"No se pudo obtener '{panel_name}': {e}")
+                                        return None
+                                if isinstance(panel_data, list) and panel_data:
+                                    return panel_data[0]
+                                return panel_data if isinstance(panel_data, dict) else None
+
+                            cook = get_panel_data("Cómo cocinarlo", analyze_cooking, name, ings)
+                            nut = get_panel_data("Información nutricional", analyze_nutrition, name, ings)
+                            kcal_obj = nut.get("kcal") if nut else None
+                            alts = get_panel_data("Alternativas similares", analyze_alternatives, name, ings, kcal_obj)
+
+                            try:
+                                pdf_bytes = _build_report_pdf(name, cook, nut, alts)
+                                st.download_button(
+                                    "⬇️ Descargar reporte (PDF)",
+                                    data=pdf_bytes,
+                                    file_name=f"reporte_{(name or 'platillo').lower().replace(' ','_')}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            except Exception as e:
+                                st.error(f"Error al generar el PDF: {e}")
 
             if st.button("Cerrar", key="close_panel"):
                 st.session_state.analysis_panel = None
                 st.rerun()
+
+if __name__ == "__main__":
+    render_scan()

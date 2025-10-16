@@ -13,7 +13,7 @@ SECCIONES = [
     "Escanear platillo",
     "Calculadora nutricional",
     "Crear receta",
-    "Platómetro",
+    "Platosaurio",
 ]
 
 # --- Menú lateral con streamlit-option-menu ---
@@ -49,6 +49,10 @@ def render_home():
             """,
             unsafe_allow_html=True,
         )
+        
+        # Video de demostración
+        st.markdown("### ✨ Comer sano ¡es súper divertido!")
+        st.video("https://www.youtube.com/watch?v=amsyeMtqbAg")
 
     with right:
         st.markdown("## Elige una opción")
@@ -62,11 +66,11 @@ def render_home():
 
         st.divider()
 
-        if st.button("📟 Platómetro", use_container_width=True):
-            go_to("Platómetro")
+        if st.button("🦖 Platosaurio", use_container_width=True):
+            go_to("Platosaurio")
 
         st.caption(
-            "Para usar el Platómetro es necesario conectarlo previamente al dispositivo externo."
+            "Para usar el Platosaurio es necesario conectarlo previamente al dispositivo externo."
         )
 
 
@@ -92,7 +96,7 @@ elif st.session_state.nav == "Calculadora nutricional":
     render_calc()
 elif st.session_state.nav == "Crear receta":
     render_create()
-elif st.session_state.nav == "Platómetro":
+elif st.session_state.nav == "Platosaurio":
     render_platometro()
 
 # --- Estilos globales ---
