@@ -52,7 +52,7 @@ def render_home():
         
         # Video de demostración
         st.markdown("### ✨ Comer sano ¡es súper divertido!")
-        st.video("https://www.youtube.com/watch?v=amsyeMtqbAg")
+        st.video("https://youtu.be/aimgbSJY7J8")
 
     with right:
         st.markdown("## Elige una opción")
